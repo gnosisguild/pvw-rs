@@ -3,8 +3,10 @@
 //! Implementation following "Practical Non-interactive Publicly Verifiable Secret Sharing with Thousands of Parties" (Section 2.5)
 //! https://eprint.iacr.org/2021/1397.pdf
 
-use num_bigint::BigUint;
+use ndarray::Array2;
+use num_bigint::{BigUint, RandBigInt};
 use num_traits::{One, Zero};
+use rand::{CryptoRng, RngCore};
 use thiserror::Error;
 
 /// PVW-specific errors
@@ -102,11 +104,26 @@ impl PvwParameters {
 
         Ok(g)
     }
+
+    /// Generate the Common Reference String (CRS) random matrix A ← R_q^(k×k)
+    /// This is a k×k matrix with elements sampled uniformly from Z_q
+    pub fn generate_crs<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Array2<BigUint> {
+        // Initialize a k×k matrix
+        let mut matrix = Array2::from_elem((self.k, self.k), BigUint::zero());
+
+        // Fill with random elements from Z_q
+        for elem in matrix.iter_mut() {
+            *elem = rng.gen_biguint_below(&self.q);
+        }
+
+        matrix
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::rngs::OsRng;
 
     #[test]
     fn test_invalid_parameters() {
@@ -371,6 +388,39 @@ mod tests {
                     "Decreasing pattern should hold for large modulus"
                 );
             }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_crs() -> Result<()> {
+        let mut rng = OsRng;
+
+        // Create the full CRT modulus from TRBFV parameters
+        // Q = 0x1FFFFFFEA0001 × 0x1FFFFFFE88001 × 0x1FFFFFFE48001
+        // Q ≈ 1.78 × 10^44 (147 bits)
+        let mod1 = BigUint::from(0x1FFFFFFEA0001u64); // ~49 bits
+        let mod2 = BigUint::from(0x1FFFFFFE88001u64); // ~49 bits
+        let mod3 = BigUint::from(0x1FFFFFFE48001u64); // ~49 bits
+        let q = &mod1 * &mod2 * &mod3;
+
+        let params = PvwParameters::new(3, 1, 4, 4, q.clone(), 1.0, 1.0, 1.0)?;
+
+        println!("Testing with {}-bit modulus", q.bits());
+        println!("Q = {}", q);
+
+        // Generate CRS matrix
+        let matrix = params.generate_crs(&mut rng);
+
+        // Verify elements are in Z_q and check their bit lengths
+        // Since we sample uniformly in [0, q), elements will have:
+        // - At most q.bits() bits (147 in this case)
+        // - Usually close to max bits (146-147) due to uniform distribution
+        // - Sometimes fewer bits when we randomly get smaller numbers
+        for (i, elem) in matrix.iter().enumerate() {
+            assert!(elem < &params.q, "Element {} should be less than q", i);
+            println!("Generated value {} has {} bits", i, elem.bits());
         }
 
         Ok(())
