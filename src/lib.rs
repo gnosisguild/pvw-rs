@@ -2,7 +2,7 @@
 //!
 //! Implementation following "Practical Non-interactive Publicly Verifiable Secret Sharing with Thousands of Parties" (Section 2.5)
 //! https://eprint.iacr.org/2021/1397.pdf
-
+pub mod secret_key;
 use ndarray::Array2;
 use num_bigint::{BigUint, RandBigInt};
 use num_traits::{One, Zero};
@@ -31,12 +31,8 @@ pub struct PvwParameters {
     pub l: usize,
     /// Modulus for LWE (q in the paper)
     pub q: BigUint,
-    /// Secret distribution (χs in the paper)
-    pub x_s: f64,
-    /// Noise distributions (χe1, χe2 in the paper)
-    pub x_e1: f64,
-    pub x_e2: f64,
-    pub variance: f64, 
+    /// Variance for secret and noise sampling (used with CBD)
+    pub variance: usize,
 }
 
 impl PvwParameters {
@@ -47,18 +43,13 @@ impl PvwParameters {
         k: usize,
         l: usize,
         q: BigUint,
-        x_s: f64,
-        x_e1: f64,
-        x_e2: f64,
-        variance: f64,
+        variance: usize,
     ) -> Result<Self> {
         if l == 0 {
             return Err(PvwError::InvalidParameters("l must be > 0".to_string()));
         }
         if (l & (l - 1)) != 0 {
-            return Err(PvwError::InvalidParameters(
-                "l must be a power of 2".to_string(),
-            ));
+            return Err(PvwError::InvalidParameters("l must be a power of 2".to_string()));
         }
         if q < BigUint::from(2u32) {
             return Err(PvwError::InvalidParameters("q must be ≥ 2".to_string()));
@@ -70,9 +61,6 @@ impl PvwParameters {
             k,
             l,
             q,
-            x_s,
-            x_e1,
-            x_e2,
             variance,
         })
     }
@@ -84,41 +72,27 @@ impl PvwParameters {
     }
 
     /// Create the gadget vector g = (Δ^(l-1), ..., Δ, 1) ∈ Z_q^l
-    /// From paper: g = (Δ^(l-1), ..., Δ, 1)
     pub fn gadget_vector(&self) -> Result<Vec<BigUint>> {
         let mut g = Vec::with_capacity(self.l);
-
-        // Build the gadget vector: g = (Δ^(l-1), Δ^(l-2), ..., Δ^1, Δ^0)
-        // where Δ^0 = 1
         for i in 0..self.l {
-            // l-1-i gives us l-1, l-2, ..., 1, 0
             let power = self.l - 1 - i;
             let delta_power = if power == 0 {
-                // the last element is always 1
                 BigUint::one()
             } else {
-                // Compute Δ^power using BigUint, then reduce mod q since all
-                // elements of the gadget vector are ∈Z_q^l
                 let delta_pow = self.delta().pow(power as u32);
                 &delta_pow % &self.q
             };
             g.push(delta_power);
         }
-
         Ok(g)
     }
 
     /// Generate the Common Reference String (CRS) random matrix A ← R_q^(k×k)
-    /// This is a k×k matrix with elements sampled uniformly from Z_q
     pub fn generate_crs<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Array2<BigUint> {
-        // Initialize a k×k matrix
         let mut matrix = Array2::from_elem((self.k, self.k), BigUint::zero());
-
-        // Fill with random elements from Z_q
         for elem in matrix.iter_mut() {
             *elem = rng.gen_biguint_below(&self.q);
         }
-
         matrix
     }
 }
@@ -127,16 +101,17 @@ impl PvwParameters {
 mod tests {
     use super::*;
     use rand::rngs::OsRng;
+    use std::sync::Arc;
 
     #[test]
     fn test_invalid_parameters() {
-        let params = PvwParameters::new(3, 1, 4, 3, BigUint::from(1u64), 1.0, 1.0, 1.0);
+        let params = PvwParameters::new(3, 1, 4, 3, BigUint::from(1u64), 1);
         assert!(params.is_err(), "q < 2 should fail");
 
-        let params = PvwParameters::new(3, 1, 4, 3, BigUint::from(16u64), 1.0, 1.0, 1.0);
+        let params = PvwParameters::new(3, 1, 4, 3, BigUint::from(16u64), 1);
         assert!(params.is_err(), "l=3 (not power of 2) should fail");
 
-        let params = PvwParameters::new(3, 1, 4, 4, BigUint::from(16u64), 1.0, 1.0, 1.0);
+        let params = PvwParameters::new(3, 1, 4, 4, BigUint::from(16u64), 1);
         assert!(params.is_ok(), "l=4 (power of 2) should work");
     }
 
@@ -144,7 +119,7 @@ mod tests {
     fn test_delta_computation() -> Result<()> {
         // Test case 1: Simple values
         // For q = 16, l = 2: Δ = floor(16^(1/2)) = floor(4.0) = 4
-        let params1 = PvwParameters::new(3, 1, 4, 2, BigUint::from(16u64), 1.0, 1.0, 1.0)?;
+        let params1 = PvwParameters::new(3, 1, 4, 2, BigUint::from(16u64), 1)?;
         let delta1 = params1.delta();
         assert_eq!(
             delta1,
@@ -154,7 +129,7 @@ mod tests {
 
         // Test case 2: Another simple case
         // For q = 20, l = 4: Δ = floor(20^(1/4)) = floor(2.114...) = 2
-        let params2 = PvwParameters::new(3, 1, 4, 4, BigUint::from(20u64), 1.0, 1.0, 1.0)?;
+        let params2 = PvwParameters::new(3, 1, 4, 4, BigUint::from(20u64), 1)?;
         let delta2 = params2.delta();
         assert_eq!(
             delta2,
@@ -164,7 +139,7 @@ mod tests {
 
         // Test case 3: Non-perfect power
         // For q = 100, l = 2: Δ = floor(100^(1/2)) = floor(10.0) = 10
-        let params3 = PvwParameters::new(3, 1, 4, 2, BigUint::from(100u64), 1.0, 1.0, 1.0)?;
+        let params3 = PvwParameters::new(3, 1, 4, 2, BigUint::from(100u64), 1)?;
         let delta3 = params3.delta();
         assert_eq!(
             delta3,
@@ -174,7 +149,7 @@ mod tests {
 
         // Test case 4: Large prime (like in the original code)
         // For q = 65537, l = 8: Δ = floor(65537^(1/8)) ≈ floor(4.00...) = 4
-        let params4 = PvwParameters::new(3, 1, 4, 8, BigUint::from(65537u64), 1.0, 1.0, 1.0)?;
+        let params4 = PvwParameters::new(3, 1, 4, 8, BigUint::from(65537u64), 1)?;
         let delta4 = params4.delta();
 
         // Manual verification: 4^8 = 65536, 5^8 = 390625
@@ -199,7 +174,7 @@ mod tests {
     fn test_gadget_vector_structure() -> Result<()> {
         // Test with q=20, l=4, Δ=2
         // Expected gadget vector: g = (2^3, 2^2, 2^1, 2^0) = (8, 4, 2, 1)
-        let params = PvwParameters::new(3, 1, 4, 4, BigUint::from(20u64), 1.0, 1.0, 1.0)?;
+        let params = PvwParameters::new(3, 1, 4, 4, BigUint::from(20u64), 1)?;
         let gadget = params.gadget_vector()?;
         let delta = params.delta();
 
@@ -274,7 +249,7 @@ mod tests {
         // q=65537, l=8, Δ=4
         // Expected: g = (4^7, 4^6, 4^5, 4^4, 4^3, 4^2, 4^1, 4^0)
         //              = (16384, 4096, 1024, 256, 64, 16, 4, 1)
-        let params = PvwParameters::new(3, 1, 4, 8, BigUint::from(65537u64), 1.0, 1.0, 1.0)?;
+        let params = PvwParameters::new(3, 1, 4, 8, BigUint::from(65537u64), 1)?;
         let gadget = params.gadget_vector()?;
         let delta = params.delta();
 
@@ -347,7 +322,7 @@ mod tests {
         let q_full = &mod1 * &mod2 * &mod3;
 
         // Use this massive modulus for PVW parameters
-        let params = PvwParameters::new(3, 1, 4, 8, q_full, 1.0, 1.0, 1.0)?;
+        let params = PvwParameters::new(3, 1, 4, 8, q_full, 1)?;
 
         // Test that delta computation works with very large modulus
         let delta = params.delta();
@@ -408,7 +383,7 @@ mod tests {
         let mod3 = BigUint::from(0x1FFFFFFE48001u64); // ~49 bits
         let q = &mod1 * &mod2 * &mod3;
 
-        let params = PvwParameters::new(3, 1, 4, 4, q.clone(), 1.0, 1.0, 1.0)?;
+        let params = PvwParameters::new(3, 1, 4, 4, q.clone(), 1)?;
 
         println!("Testing with {}-bit modulus", q.bits());
         println!("Q = {}", q);
@@ -426,6 +401,74 @@ mod tests {
             println!("Generated value {} has {} bits", i, elem.bits());
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_secret_key_pvw_integration() -> Result<()> {
+        use crate::secret_key::SecretKey;
+        use rand::thread_rng;
+        
+        // Create PVW parameters
+        let params = Arc::new(PvwParameters::new(
+            10,                              // n: number of parties
+            4,                               // t: bound on dishonest parties  
+            4,                               // k: LWE dimension
+            8,                               // l: redundancy parameter
+            BigUint::from(65537u64),         // q: modulus
+            2,                               // variance: for CBD sampling
+        )?);
+        
+        let mut rng = thread_rng();
+        
+        // Generate a secret key using the PVW parameters
+        let sk = SecretKey::random(&params, &mut rng);
+        
+        // Test that SecretKey works with PVW functionality
+        let delta = params.delta();
+        let gadget = params.gadget_vector()?;
+        
+        // Verify dimensions are compatible
+        assert_eq!(gadget.len(), params.l, "Gadget vector length should match l");
+        assert_eq!(sk.as_matrix().len(), params.k, "Secret key should have k polynomials");
+        
+        if !sk.as_matrix().is_empty() {
+            assert_eq!(sk.as_matrix()[0].len(), gadget.len(), 
+                      "Each polynomial should have same length as gadget vector");
+        }
+        
+        // Test polynomial conversion compatibility (disabled until Context available)
+        // let ctx = Arc::new(fhe_math::rq::Context::new(&[params.q.to_u64_digits()[0]], params.l).unwrap());
+        // let polys = sk.to_poly_vector(&ctx).unwrap();
+        // assert_eq!(polys.len(), params.k, "Should have k polynomials");
+        
+        // Verify each polynomial has correct number of coefficients
+        // for poly in &polys {
+        //     assert_eq!(poly.coeffs().len(), params.l, 
+        //               "Each polynomial should have l coefficients");
+        // }
+        
+        // Test that CRS generation works with secret key dimensions
+        let crs = params.generate_crs(&mut rng);
+        assert_eq!(crs.shape(), [params.k, params.k], "CRS should be k×k matrix");
+        
+        // Verify coefficient bounds are reasonable for the variance
+        let max_expected = (params.variance * 3) as i64;
+        for row in sk.as_matrix() {
+            for &coeff in row {
+                assert!(coeff.abs() <= max_expected, 
+                       "Coefficient {} exceeds expected bound {} for variance {}", 
+                       coeff, max_expected, params.variance);
+            }
+        }
+        
+        println!("✓ SecretKey-PVW integration test passed");
+        println!("  Parameters: n={}, t={}, k={}, l={}", params.n, params.t, params.k, params.l);
+        println!("  Delta: {}", delta);
+        println!("  Gadget vector length: {}", gadget.len());
+        println!("  Secret key matrix: {}×{}", sk.as_matrix().len(), sk.as_matrix()[0].len());
+        println!("  CRS dimensions: {:?}", crs.shape());
+        
         Ok(())
     }
 }
