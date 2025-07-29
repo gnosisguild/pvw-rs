@@ -187,50 +187,40 @@ mod tests {
             10,                              // n: number of parties
             4,                               // t: bound on dishonest parties  
             4,                               // k: LWE dimension
-            8,                               // l: redundancy parameter
-            BigUint::from(65537u64),         // q: modulus
+            8,                               // l: redundancy parameter (power of 2)
+            BigUint::from(65537u64),         // q: modulus (fits in u64)
             2,                               // variance: for CBD sampling
         ).expect("Valid parameters"))
     }
-    
     // Note: These tests require a proper Context from fhe-math
     // You'll need to create a Context that matches your PvwParameters
     
     #[test]
-    fn test_crs_dimensions() {
+    fn test_crs_creation() {
         let params = create_test_params();
-        // let ctx = Arc::new(Context::new(&[65537u64], params.l).unwrap());
-        // let mut rng = thread_rng();
+        let ctx = params.create_context().unwrap();
+        let mut rng = thread_rng();
         
-        // let crs = PvwCrs::new(&params, &ctx, &mut rng).unwrap();
+        let crs = PvwCrs::new(&params, &ctx, &mut rng).unwrap();
         
-        // assert_eq!(crs.dimensions(), (params.k, params.k));
-        // assert_eq!(crs.len(), params.k * params.k);
-        // assert!(!crs.is_empty());
-        
-        // Placeholder test until Context is available
-        assert_eq!(params.k, 4);
+        assert_eq!(crs.dimensions(), (params.k, params.k));
+        assert_eq!(crs.len(), params.k * params.k);
+        assert!(!crs.is_empty());
+        assert!(crs.validate().is_ok());
     }
-    
     #[test]
     fn test_deterministic_generation() {
         let params = create_test_params();
-        // let ctx = Arc::new(Context::new(&[65537u64], params.l).unwrap());
+        let ctx = params.create_context().unwrap();
         
         let seed = [42u8; 32];
         
-        // let crs1 = PvwCrs::new_deterministic(&params, &ctx, seed).unwrap();
-        // let crs2 = PvwCrs::new_deterministic(&params, &ctx, seed).unwrap();
+        let crs1 = PvwCrs::new_deterministic(&params, &ctx, seed).unwrap();
+        let crs2 = PvwCrs::new_deterministic(&params, &ctx, seed).unwrap();
         
-        // // Same seed should produce identical CRS
-        // for i in 0..params.k {
-        //     for j in 0..params.k {
-        //         assert_eq!(crs1.get(i, j), crs2.get(i, j));
-        //     }
-        // }
-        
-        // Placeholder test
-        assert_eq!(seed.len(), 32);
+        // Same seed should produce identical CRS
+        // Note: We'd need to implement PartialEq for Poly to test equality directly
+        assert_eq!(crs1.dimensions(), crs2.dimensions());
     }
     
     #[test]
@@ -246,24 +236,5 @@ mod tests {
         assert!(params.k > 0);
     }
     
-    #[test]
-    fn test_matrix_access() {
-        let params = create_test_params();
-        // let ctx = Arc::new(Context::new(&[65537u64], params.l).unwrap());
-        // let mut rng = thread_rng();
-        
-        // let mut crs = PvwCrs::new(&params, &ctx, &mut rng).unwrap();
-        
-        // // Test bounds checking
-        // assert!(crs.get(0, 0).is_some());
-        // assert!(crs.get(params.k-1, params.k-1).is_some());
-        // assert!(crs.get(params.k, 0).is_none());
-        // assert!(crs.get(0, params.k).is_none());
-        
-        // // Test mutable access
-        // assert!(crs.get_mut(0, 0).is_some());
-        
-        // Placeholder test
-        assert!(params.k > 0);
-    }
+
 }

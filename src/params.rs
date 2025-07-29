@@ -1,8 +1,8 @@
-use ndarray::Array2;
-use num_bigint::{BigUint, RandBigInt};
-use num_traits::{One, Zero};
-use rand::{CryptoRng, RngCore};
+use num_bigint::BigUint;
+use num_traits::{One, Zero};      
 use thiserror::Error;
+use fhe_math::rq::Context;
+use std::sync::Arc;
 
 /// PVW-specific errors
 #[derive(Error, Debug)]
@@ -80,6 +80,24 @@ impl PvwParameters {
             g.push(delta_power);
         }
         Ok(g)
+    }
+    /// Create a Context for fhe-math operations that matches these parameters
+    pub fn create_context(&self) -> std::result::Result<Arc<Context>, Box<dyn std::error::Error>> {
+        // Handle modulus conversion from BigUint to u64 vector
+        let moduli = if self.q <= BigUint::from(u64::MAX) {
+            // Single modulus case - fits in u64
+            vec![self.q.to_u64_digits()[0]]
+        } else {
+            // Large modulus case - need CRT representation
+            return Err(format!(
+                "Modulus {} too large for single u64. CRT representation needed.",
+                self.q
+            ).into());  // This now works with Box<dyn std::error::Error>
+        };
+        
+        // Create context with our parameters
+        Context::new_arc(&moduli, self.l)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
     }
 
     // /// Generate the Common Reference String (CRS) random matrix A ← R_q^(k×k)
