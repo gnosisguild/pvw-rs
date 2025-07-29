@@ -36,6 +36,7 @@ pub struct PvwParameters {
     /// Noise distributions (χe1, χe2 in the paper)
     pub x_e1: f64,
     pub x_e2: f64,
+    pub variance: f64, 
 }
 
 impl PvwParameters {
@@ -49,6 +50,7 @@ impl PvwParameters {
         x_s: f64,
         x_e1: f64,
         x_e2: f64,
+        variance: f64,
     ) -> Result<Self> {
         if l == 0 {
             return Err(PvwError::InvalidParameters("l must be > 0".to_string()));
@@ -71,6 +73,7 @@ impl PvwParameters {
             x_s,
             x_e1,
             x_e2,
+            variance,
         })
     }
 
