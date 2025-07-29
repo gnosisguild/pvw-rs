@@ -1,6 +1,6 @@
 use fhe_math::rq::Poly;
 use fhe_util::sample_vec_cbd;
-use crate::PvwParameters; 
+use crate::params::PvwParameters; 
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -63,7 +63,7 @@ impl SecretKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PvwParameters;
+    use crate::params::PvwParameters;
     use num_bigint::BigUint;
     use rand::thread_rng;
     use std::sync::Arc;

@@ -540,11 +540,13 @@ name = "pvw"
 version = "0.1.0"
 dependencies = [
  "fhe-math",
+ "fhe-traits",
  "fhe-util",
  "ndarray",
  "num-bigint",
  "num-traits",
  "rand",
+ "rand_chacha",
  "thiserror",
  "zeroize",
  "zeroize_derive",

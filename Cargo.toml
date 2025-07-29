@@ -11,7 +11,8 @@ thiserror = "1.0.50"
 ndarray = "0.15.6"
 zeroize = "1.7.0"
 zeroize_derive = "1.4.2"
+rand_chacha = "0.3" 
 
-#[workspace.dependencies]
 fhe-math = { git = "https://github.com/gnosisguild/fhe.rs", branch = "refactor/pvw-compat", package = "fhe-math" }
 fhe-util = { git = "https://github.com/gnosisguild/fhe.rs", branch = "refactor/pvw-compat", package = "fhe-util" }
+fhe-traits = { git = "https://github.com/gnosisguild/fhe.rs", branch = "refactor/pvw-compat", package = "fhe-traits" }
