@@ -5,3 +5,5 @@
 pub mod secret_key;
 pub mod crs; 
 pub mod params;
+pub mod public_key;
+

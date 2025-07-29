@@ -1,5 +1,5 @@
 use num_bigint::BigUint;
-use num_traits::{One, Zero};      
+use num_traits::{One, Zero};    
 use thiserror::Error;
 use fhe_math::rq::Context;
 use std::sync::Arc;

@@ -5,6 +5,9 @@ use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+
+#[derive(Debug, Clone)] 
+
 /// The secret key stores coefficients as a matrix for better memory efficiency
 /// Matrix dimensions: k x l (k polynomials, each with l coefficients)
 /// where k is the security parameter and l is the ring degree R_q
