@@ -1,11 +1,11 @@
-use std::sync::Arc;
-use ndarray::{Array2, ArrayView2};
-use fhe_math::rq::{Poly, Context, Representation};
-use fhe_util::sample_vec_cbd;
-use rand::{CryptoRng, RngCore};
-use crate::params::{PvwParameters, Result, PvwError};
-use crate::secret_key::SecretKey;
 use crate::crs::PvwCrs;
+use crate::params::{PvwError, PvwParameters, Result};
+use crate::secret_key::SecretKey;
+use fhe_math::rq::{Context, Poly, Representation};
+use fhe_util::sample_vec_cbd;
+use ndarray::Array2;
+use rand::{CryptoRng, RngCore};
+use std::sync::Arc;
 
 /// Individual party in the PVSS protocol
 /// Each party manages their own secret key and has a unique index
@@ -52,17 +52,16 @@ impl Party {
     ) -> Result<Self> {
         // Validate index
         if index >= params.n {
-            return Err(PvwError::InvalidParameters(
-                format!("Party index {} exceeds maximum {}", index, params.n - 1)
-            ));
+            return Err(PvwError::InvalidParameters(format!(
+                "Party index {} exceeds maximum {}",
+                index,
+                params.n - 1
+            )));
         }
 
         let secret_key = SecretKey::random(params, rng);
-        
-        Ok(Self {
-            index,
-            secret_key,
-        })
+
+        Ok(Self { index, secret_key })
     }
 
     /// Generate this party's public key using the provided CRS
@@ -97,49 +96,56 @@ impl PublicKey {
     ) -> Result<Self> {
         // Validate dimensions
         if secret_key.par.k != crs.params.k {
-            return Err(PvwError::InvalidParameters(
-                format!("Secret key dimension {} doesn't match CRS dimension {}", 
-                       secret_key.par.k, crs.params.k)
-            ));
+            return Err(PvwError::InvalidParameters(format!(
+                "Secret key dimension {} doesn't match CRS dimension {}",
+                secret_key.par.k, crs.params.k
+            )));
         }
 
         // Convert secret key to polynomial form for computation
-        let sk_polys = secret_key.to_poly_vector(ctx)
-            .map_err(|e| PvwError::InvalidParameters(format!("Failed to convert secret key: {}", e)))?;
+        let sk_polys = secret_key.to_poly_vector(ctx).map_err(|e| {
+            PvwError::InvalidParameters(format!("Failed to convert secret key: {}", e))
+        })?;
 
         // Generate noise matrix with same variance as secret key
         let mut noise_matrix = Vec::with_capacity(secret_key.par.k);
         for _ in 0..secret_key.par.k {
             let noise_coeffs = sample_vec_cbd(secret_key.par.l, secret_key.par.variance, rng)
-                .map_err(|e| PvwError::InvalidParameters(format!("Failed to sample noise: {}", e)))?;
+                .map_err(|e| {
+                    PvwError::InvalidParameters(format!("Failed to sample noise: {}", e))
+                })?;
             noise_matrix.push(noise_coeffs);
         }
 
         // Convert noise to polynomials for computation
         let mut noise_polys = Vec::with_capacity(secret_key.par.k);
         for noise_coeffs in &noise_matrix {
-            let noise_poly = Poly::from_coefficients(noise_coeffs, ctx)
-                .map_err(|e| PvwError::InvalidParameters(format!("Failed to create noise polynomial: {}", e)))?;
+            let noise_poly = Poly::from_coefficients(noise_coeffs, ctx).map_err(|e| {
+                PvwError::InvalidParameters(format!("Failed to create noise polynomial: {}", e))
+            })?;
             noise_polys.push(noise_poly);
         }
 
         // Compute b_i = s_i * A + e_i
         let mut result_polys = Vec::with_capacity(secret_key.par.k);
-        
+
         for i in 0..secret_key.par.k {
             // Compute (s_i * A)[i] = sum over j of s_i[j] * A[j][i]
             let mut result = Poly::zero(ctx, Representation::Ntt);
-            
+
             for j in 0..secret_key.par.k {
                 let a_ji = crs.get(j, i).ok_or_else(|| {
-                    PvwError::InvalidParameters(format!("CRS matrix access failed at ({}, {})", j, i))
+                    PvwError::InvalidParameters(format!(
+                        "CRS matrix access failed at ({}, {})",
+                        j, i
+                    ))
                 })?;
-                
+
                 // Multiply sk_poly[j] * crs[j][i] and add to result
                 let product = &sk_polys[j] * a_ji;
                 result = &result + &product;
             }
-            
+
             // Add noise: result = s_i * A + e_i
             result = &result + &noise_polys[i];
             result_polys.push(result);
@@ -150,10 +156,10 @@ impl PublicKey {
         for mut poly in result_polys {
             // Convert to PowerBasis representation to extract coefficients
             poly.change_representation(Representation::PowerBasis);
-            
+
             // Extract coefficients from polynomial
             let coeffs_view = poly.coefficients(); // Returns ArrayView2<u64>
-            
+
             // Convert from u64 to i64 and extract first row (assuming single modulus for now)
             // If multiple moduli, we need to use CRT reconstruction
             let coeffs_i64: Vec<i64> = if coeffs_view.nrows() == 1 {
@@ -164,7 +170,7 @@ impl PublicKey {
                 // TODO: Implement proper CRT reconstruction
                 coeffs_view.row(0).iter().map(|&x| x as i64).collect()
             };
-            
+
             key_matrix.push(coeffs_i64);
         }
 
@@ -175,7 +181,10 @@ impl PublicKey {
     }
 
     /// Convert the coefficient matrix to polynomial vector when needed for operations
-    pub fn to_poly_vector(&self, ctx: &Arc<Context>) -> std::result::Result<Vec<Poly>, fhe_math::Error> {
+    pub fn to_poly_vector(
+        &self,
+        ctx: &Arc<Context>,
+    ) -> std::result::Result<Vec<Poly>, fhe_math::Error> {
         self.key_matrix
             .iter()
             .map(|coeffs| Poly::from_coefficients(coeffs, ctx))
@@ -200,21 +209,24 @@ impl PublicKey {
     /// Validate that the public key has the correct structure
     pub fn validate(&self) -> Result<()> {
         if self.key_matrix.len() != self.params.k {
-            return Err(PvwError::InvalidParameters(
-                format!("Public key dimension {} doesn't match parameter k={}", 
-                       self.key_matrix.len(), self.params.k)
-            ));
+            return Err(PvwError::InvalidParameters(format!(
+                "Public key dimension {} doesn't match parameter k={}",
+                self.key_matrix.len(),
+                self.params.k
+            )));
         }
-        
+
         for (i, coeffs) in self.key_matrix.iter().enumerate() {
             if coeffs.len() != self.params.l {
-                return Err(PvwError::InvalidParameters(
-                    format!("Public key polynomial {} has {} coefficients, expected {}", 
-                           i, coeffs.len(), self.params.l)
-                ));
+                return Err(PvwError::InvalidParameters(format!(
+                    "Public key polynomial {} has {} coefficients, expected {}",
+                    i,
+                    coeffs.len(),
+                    self.params.l
+                )));
             }
         }
-        
+
         Ok(())
     }
 }
@@ -225,9 +237,9 @@ impl GlobalPublicKey {
         // Initialize matrix with empty coefficient vectors
         let matrix = Array2::from_elem(
             (crs.params.n, crs.params.k),
-            vec![0i64; crs.params.l] // Each element is a coefficient vector of length l
+            vec![0i64; crs.params.l], // Each element is a coefficient vector of length l
         );
-        
+
         Self {
             matrix,
             params: crs.params.clone(),
@@ -241,18 +253,20 @@ impl GlobalPublicKey {
     pub fn add_public_key(&mut self, index: usize, public_key: PublicKey) -> Result<()> {
         // Validate index bounds
         if index >= self.params.n {
-            return Err(PvwError::InvalidParameters(
-                format!("Party index {} exceeds maximum {}", index, self.params.n - 1)
-            ));
+            return Err(PvwError::InvalidParameters(format!(
+                "Party index {} exceeds maximum {}",
+                index,
+                self.params.n - 1
+            )));
         }
 
         // Validate public key
         public_key.validate()?;
         if public_key.params.k != self.params.k {
-            return Err(PvwError::InvalidParameters(
-                format!("Public key dimension {} doesn't match global key dimension {}", 
-                       public_key.params.k, self.params.k)
-            ));
+            return Err(PvwError::InvalidParameters(format!(
+                "Public key dimension {} doesn't match global key dimension {}",
+                public_key.params.k, self.params.k
+            )));
         }
 
         // Copy public key coefficient vectors to the matrix
@@ -260,9 +274,10 @@ impl GlobalPublicKey {
             if let Some(matrix_entry) = self.matrix.get_mut((index, j)) {
                 *matrix_entry = coeffs.clone();
             } else {
-                return Err(PvwError::InvalidParameters(
-                    format!("Matrix access failed at ({}, {})", index, j)
-                ));
+                return Err(PvwError::InvalidParameters(format!(
+                    "Matrix access failed at ({}, {})",
+                    index, j
+                )));
             }
         }
 
@@ -347,10 +362,10 @@ impl GlobalPublicKey {
     pub fn validate(&self) -> Result<()> {
         let (rows, cols) = self.matrix.dim();
         if rows != self.params.n || cols != self.params.k {
-            return Err(PvwError::InvalidParameters(
-                format!("Global public key matrix dimensions {}×{} don't match parameters n={}, k={}", 
-                       rows, cols, self.params.n, self.params.k)
-            ));
+            return Err(PvwError::InvalidParameters(format!(
+                "Global public key matrix dimensions {}×{} don't match parameters n={}, k={}",
+                rows, cols, self.params.n, self.params.k
+            )));
         }
         Ok(())
     }
@@ -363,9 +378,11 @@ impl GlobalPublicKey {
         rng: &mut R,
     ) -> Result<()> {
         if parties.len() > self.params.n {
-            return Err(PvwError::InvalidParameters(
-                format!("Too many parties: {} > {}", parties.len(), self.params.n)
-            ));
+            return Err(PvwError::InvalidParameters(format!(
+                "Too many parties: {} > {}",
+                parties.len(),
+                self.params.n
+            )));
         }
 
         for party in parties {
@@ -383,9 +400,11 @@ impl GlobalPublicKey {
         rng: &mut R,
     ) -> Result<()> {
         if secret_keys.len() > self.params.n {
-            return Err(PvwError::InvalidParameters(
-                format!("Too many secret keys: {} > {}", secret_keys.len(), self.params.n)
-            ));
+            return Err(PvwError::InvalidParameters(format!(
+                "Too many secret keys: {} > {}",
+                secret_keys.len(),
+                self.params.n
+            )));
         }
 
         for (index, secret_key) in secret_keys.iter().enumerate() {
@@ -404,25 +423,28 @@ mod tests {
     use rand::thread_rng;
 
     fn create_test_params() -> Arc<PvwParameters> {
-        Arc::new(PvwParameters::new(
-            5,                               // n: number of parties
-            2,                               // t: bound on dishonest parties  
-            4,                               // k: LWE dimension
-            8,                               // l: redundancy parameter
-            BigUint::from(65537u64),         // q: modulus
-            2,                               // variance: for CBD sampling
-        ).expect("Valid parameters"))
+        Arc::new(
+            PvwParameters::new(
+                5,                       // n: number of parties
+                2,                       // t: bound on dishonest parties
+                4,                       // k: LWE dimension
+                8,                       // l: redundancy parameter
+                BigUint::from(65537u64), // q: modulus
+                2,                       // variance: for CBD sampling
+            )
+            .expect("Valid parameters"),
+        )
     }
 
     #[test]
     fn test_party_creation() {
         let params = create_test_params();
         let mut rng = thread_rng();
-        
+
         let party = Party::new(0, &params, &mut rng).unwrap();
         assert_eq!(party.index(), 0);
         assert_eq!(party.secret_key().par.k, params.k);
-        
+
         // Test invalid index
         let invalid_party = Party::new(params.n, &params, &mut rng);
         assert!(invalid_party.is_err());
@@ -434,14 +456,14 @@ mod tests {
         // Note: This test requires Context integration
         // let ctx = params.create_context().unwrap();
         // let mut rng = thread_rng();
-        // 
+        //
         // let party = Party::new(0, &params, &mut rng).unwrap();
         // let crs = PvwCrs::new(&params, &ctx, &mut rng).unwrap();
         // let pk = party.generate_public_key(&crs, &ctx, &mut rng).unwrap();
-        // 
+        //
         // assert_eq!(pk.dimension(), params.k);
         // assert!(pk.validate().is_ok());
-        
+
         // Placeholder test
         assert_eq!(params.k, 4);
     }
@@ -452,15 +474,15 @@ mod tests {
         // Note: This test requires Context integration
         // let ctx = params.create_context().unwrap();
         // let mut rng = thread_rng();
-        // 
+        //
         // let crs = PvwCrs::new(&params, &ctx, &mut rng).unwrap();
         // let mut global_pk = GlobalPublicKey::new(crs);
-        // 
+        //
         // assert_eq!(global_pk.dimensions(), (params.n, params.k));
         // assert_eq!(global_pk.num_public_keys(), 0);
         // assert!(!global_pk.is_full());
         // assert!(global_pk.validate().is_ok());
-        
+
         // Placeholder test
         assert_eq!(params.n, 5);
     }
@@ -469,23 +491,26 @@ mod tests {
     fn test_party_workflow() {
         let params = create_test_params();
         let mut rng = thread_rng();
-        
+
         // Create parties
         let party_0 = Party::new(0, &params, &mut rng).unwrap();
         let party_1 = Party::new(1, &params, &mut rng).unwrap();
-        
+
         assert_eq!(party_0.index(), 0);
         assert_eq!(party_1.index(), 1);
-        assert_ne!(party_0.secret_key().as_matrix(), party_1.secret_key().as_matrix());
-        
+        assert_ne!(
+            party_0.secret_key().as_matrix(),
+            party_1.secret_key().as_matrix()
+        );
+
         // Note: Full workflow test requires Context integration
         // let ctx = params.create_context().unwrap();
         // let crs = PvwCrs::new(&params, &ctx, &mut rng).unwrap();
         // let mut global_pk = GlobalPublicKey::new(crs);
-        // 
+        //
         // global_pk.generate_and_add_party(&party_0, &ctx, &mut rng).unwrap();
         // global_pk.generate_and_add_party(&party_1, &ctx, &mut rng).unwrap();
-        // 
+        //
         // assert_eq!(global_pk.num_public_keys(), 2);
     }
 }
