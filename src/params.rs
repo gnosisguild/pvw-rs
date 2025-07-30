@@ -1,8 +1,8 @@
-use num_bigint::BigUint;
-use num_traits::{One, Zero};    
-use thiserror::Error;
 use fhe_math::rq::Context;
+use num_bigint::BigUint;
+use num_traits::One;
 use std::sync::Arc;
+use thiserror::Error;
 
 /// PVW-specific errors
 #[derive(Error, Debug)]
@@ -44,7 +44,9 @@ impl PvwParameters {
             return Err(PvwError::InvalidParameters("l must be > 0".to_string()));
         }
         if (l & (l - 1)) != 0 {
-            return Err(PvwError::InvalidParameters("l must be a power of 2".to_string()));
+            return Err(PvwError::InvalidParameters(
+                "l must be a power of 2".to_string(),
+            ));
         }
         if q < BigUint::from(2u32) {
             return Err(PvwError::InvalidParameters("q must be ≥ 2".to_string()));
@@ -92,12 +94,12 @@ impl PvwParameters {
             return Err(format!(
                 "Modulus {} too large for single u64. CRT representation needed.",
                 self.q
-            ).into());  // This now works with Box<dyn std::error::Error>
+            )
+            .into()); // This now works with Box<dyn std::error::Error>
         };
-        
+
         // Create context with our parameters
-        Context::new_arc(&moduli, self.l)
-            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        Context::new_arc(&moduli, self.l).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
     }
 
     // /// Generate the Common Reference String (CRS) random matrix A ← R_q^(k×k)
@@ -383,7 +385,4 @@ mod tests {
 
         Ok(())
     }
-
-
-    
 }
