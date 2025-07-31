@@ -115,8 +115,7 @@ impl PvwParameters {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::OsRng;
-    use std::sync::Arc;
+    use num_traits::Zero;
 
     #[test]
     fn test_invalid_parameters() {
