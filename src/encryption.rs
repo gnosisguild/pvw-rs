@@ -114,7 +114,7 @@ pub fn encrypt<R: RngCore + CryptoRng>(
         row_result_a += &e1_i_poly;
         c1.push(row_result_a);
 
-        // Add noise: row_result_b + e2[i]
+        // Add encoded message and noise: row_result_b + e2[i] + x[i]
         row_result_b += &(e2_i_poly + m_poly.clone());
         c2.push(row_result_b);
     }
