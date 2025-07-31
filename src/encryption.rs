@@ -21,20 +21,20 @@ pub fn encrypt<R: RngCore + CryptoRng>(
     rng: &mut R,
     ctx: &Arc<Context>,
     pk: &GlobalPublicKey,
-    message: &[u64],
+    scalars: &[u64],
 ) -> Result<PvwCiphertext> {
     let q = &params.q;
     let k = params.k;
     let g = params.gadget_vector()?;
-    if g.len() != message.len() {
+    if g.len() != scalars.len() {
         return Err(PvwError::InvalidParameters(
-            "message length must equal gadget dimension ℓ".into(),
+            "scalars length must equal gadget dimension ℓ".into(),
         ));
     }
     // Encode each plaintext scalar x_i as x_i * g ∈ ℤ_q^l
     // Result is x = (x_1*g, x_2*g, ..., x_n*g) ∈ R^n_{l,q}
     let mut x_vec: Vec<BigUint> = Vec::with_capacity(pk.params.n * pk.params.l);
-    for x in message {
+    for x in scalars {
         // Encode this scalar: x_i * g = (x_i * g[0], x_i * g[1], ..., x_i * g[l-1])
         for g_j in &g {
             let encoded_coeff = (x * g_j) % q;
