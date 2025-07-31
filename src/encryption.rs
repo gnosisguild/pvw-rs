@@ -2,7 +2,7 @@ use crate::params::{PvwError, PvwParameters, Result};
 use crate::public_key::GlobalPublicKey;
 use fhe_math::rq::{Context, Poly, Representation};
 use fhe_util::sample_vec_cbd;
-use num_bigint::{BigUint, ToBigUint};
+use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
@@ -21,7 +21,7 @@ pub fn encrypt<R: RngCore + CryptoRng>(
     rng: &mut R,
     ctx: &Arc<Context>,
     pk: &GlobalPublicKey,
-    message: &[u8],
+    message: &[u64],
 ) -> Result<PvwCiphertext> {
     let q = &params.q;
     let k = params.k;
@@ -31,17 +31,18 @@ pub fn encrypt<R: RngCore + CryptoRng>(
             "message length must equal gadget dimension ℓ".into(),
         ));
     }
-    //  Compute g^T * m ∈ ℤ_q
-    let m_vec: Vec<BigUint> = message
-        .iter()
-        .zip(g.iter())
-        .map(|(&bit, g_i)| {
-            let coeff = bit.to_biguint().unwrap(); // convert u8 → BigUint
-            (g_i * coeff) % q // multiply and reduce mod q
-        })
-        .collect();
+    // Encode each plaintext scalar x_i as x_i * g ∈ ℤ_q^l
+    // Result is x = (x_1*g, x_2*g, ..., x_n*g) ∈ R^n_{l,q}
+    let mut x_vec: Vec<BigUint> = Vec::with_capacity(pk.params.n * pk.params.l);
+    for x in message {
+        // Encode this scalar: x_i * g = (x_i * g[0], x_i * g[1], ..., x_i * g[l-1])
+        for g_j in &g {
+            let encoded_coeff = (x * g_j) % q;
+            x_vec.push(encoded_coeff);
+        }
+    }
 
-    let m: Vec<i64> = m_vec
+    let x: Vec<i64> = x_vec
         .iter()
         .map(|x| x.to_i64().expect("BigUint didn’t fit in i64"))
         .collect();
@@ -70,8 +71,8 @@ pub fn encrypt<R: RngCore + CryptoRng>(
         // Compute row i of B * r: sum over j of B[i][j] * r[j]
         let mut row_result_b = Poly::zero(ctx, Representation::Ntt);
 
-        // Create polynomial for m[i]
-        let m_poly = Poly::from_coefficients(&[m[i]], ctx).map_err(|e| {
+        // Create polynomial for x[i]
+        let x_i_poly = Poly::from_coefficients(&[x[i]], ctx).map_err(|e| {
             PvwError::InvalidParameters(format!("Failed to create m polynomial: {}", e))
         })?;
 
@@ -115,7 +116,7 @@ pub fn encrypt<R: RngCore + CryptoRng>(
         c1.push(row_result_a);
 
         // Add encoded message and noise: row_result_b + e2[i] + x[i]
-        row_result_b += &(e2_i_poly + m_poly.clone());
+        row_result_b += &(e2_i_poly + x_i_poly.clone());
         c2.push(row_result_b);
     }
 
