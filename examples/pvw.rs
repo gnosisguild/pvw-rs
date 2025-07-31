@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut num_parties = 10;
     let mut threshold = 4;
     let mut dimension = 8; // Increased security parameter k
-    let mut redundancy = 4; // Minimal power of 2 for NTT
+    let mut redundancy = 8; // Minimal power of 2 for NTT
 
     // Update the parameters depending on the arguments provided.
     for arg in &args {
