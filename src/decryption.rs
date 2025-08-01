@@ -40,13 +40,21 @@ pub fn decrypt(
         y.push(&ct.c2[i] - &inner_product.clone());
     }
 
-    // Decoding step 1
-    let mut y_i = Vec::with_capacity(k);
-    let g_i_poly = Poly::from_coefficients(&[g[l].to_i64().unwrap()], ctx).map_err(|e| {
-        PvwError::InvalidParameters(format!("Failed to create g_l polynomial: {}", e))
+    // We have y = xg + e where g = (Δ^(l-1), ..., Δ, 1)
+    // This corresponds to x'_i = xΔ^(l-i) + e_i in Fig.1 notation (1-indexed)
+    
+    let delta = params.delta();
+    let mut delta_poly = Poly::from_coefficients(&[delta.to_i64().unwrap()], ctx).map_err(|e| {
+        PvwError::InvalidParameters(format!("Failed to create delta polynomial: {}", e))
     })?;
+    delta_poly.change_representation(Representation::Ntt);
+
+    // Decoding step 1: For i = 1, ..., l-1, let y_i := x'_{i+1} - Δx'_i mod q
+    // In 0-indexed: y_i[i] := y[i+1] - Δ * y[i] for i = 0, ..., l-2
+    let mut y_i = Vec::with_capacity(l - 1);
     for i in 0..l - 1 {
-        y_i.push(&y[i + 1] - &(&g_i_poly * &y[i]));
+        let delta_y_i = &delta_poly * &y[i];
+        y_i.push(&y[i + 1] - &delta_y_i);
     }
 
     // Decoding step 2
