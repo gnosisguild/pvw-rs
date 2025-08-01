@@ -77,17 +77,33 @@ pub fn decrypt(
         z += &(&delta_power_poly * &y_i[i]);
     }
 
-    // Decoding step 3
-    let mut g_0_poly = Poly::from_coefficients(&[g[0].modinv(q).unwrap().to_i64().unwrap()], ctx)
-        .map_err(|e| {
-        PvwError::InvalidParameters(format!("Failed to create g_0 polynomial: {}", e))
-    })?;
-    g_0_poly.change_representation(Representation::Ntt);
+    // Decoding step 3: Set e := z mod Δ^{l-1}
+    let delta_l_minus_1 = delta.pow((l - 1) as u32);
 
-    let mut e = Poly::zero(ctx, Representation::Ntt);
-    for i in 0..l {
-        //e = z
+    // Convert polynomial to power basis for coefficient-wise operations
+    let mut z_copy = z.clone();
+    if z_copy.representation() != &Representation::PowerBasis {
+        z_copy.change_representation(Representation::PowerBasis);
     }
+
+    // Convert coefficients to BigUint and apply modulo reduction
+    let coeffs: Vec<BigUint> = Vec::from(&z_copy);
+    let reduced_coeffs: Vec<BigUint> = coeffs.iter()
+        .map(|c| c % &delta_l_minus_1)
+        .collect();
+
+    // Convert back to polynomial in power basis representation
+    let mut e = Poly::try_convert_from(
+        reduced_coeffs.as_slice(),
+        z_copy.ctx(),
+        false,  // constant-time operations for security
+        Representation::PowerBasis
+    ).map_err(|e| {
+        PvwError::InvalidParameters(format!("Failed to convert coefficients back to polynomial: {}", e))
+    })?;
+    
+    // Convert back to NTT representation for further operations
+    e.change_representation(Representation::Ntt);
 
     // y[0] - e / g_0
     let pt = &y[0] * &g_0_poly;
