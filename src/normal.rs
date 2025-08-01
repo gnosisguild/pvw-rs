@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
-use rand::{thread_rng, Rng, RngCore};
+use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 use std::f64::consts::PI;
 
@@ -25,7 +25,7 @@ pub fn sample_bigint_normal_vec(variance: &BigInt, n: usize) -> Vec<BigInt> {
     // For variance-based sampling, we need to convert variance to standard deviation
     // σ = sqrt(variance)
     // For very large variances, we'll use an approximation
-    
+
     (0..n)
         .into_par_iter()
         .map(|_| {
@@ -44,21 +44,21 @@ fn sample_from_variance(variance: &BigInt, rng: &mut impl Rng) -> BigInt {
     // For very large variances, we need a different approach
     // σ = sqrt(variance)
     let variance_f64 = variance.to_f64();
-    
+
     match variance_f64 {
         Some(var_f64) if var_f64.is_finite() => {
             // For manageable variances, use Box-Muller with σ = sqrt(variance)
             let sigma = var_f64.sqrt();
             let gaussian_sample = box_muller(rng) * sigma;
             let rounded = gaussian_sample.round();
-            
+
             if rounded.abs() <= (i64::MAX as f64) {
                 BigInt::from(rounded as i64)
             } else {
                 // Fall back to large variance sampling
                 sample_large_variance_fallback(variance, rng)
             }
-        },
+        }
         _ => {
             // For very large variances that don't fit in f64
             sample_large_variance_fallback(variance, rng)
@@ -71,10 +71,10 @@ fn sample_large_variance_fallback(variance: &BigInt, rng: &mut impl Rng) -> BigI
     // For very large variances, we expect to get large samples
     // The standard deviation is sqrt(variance)
     // For 2^100 variance, σ = 2^50, so we should get samples often in the 2^40-2^60 range
-    
+
     let variance_bits = variance.bits();
     let sigma_bits = variance_bits / 2; // σ = sqrt(variance), so bits(σ) ≈ bits(variance)/2
-    
+
     // Generate a sample with approximately sigma_bits bits
     // But with Gaussian distribution, most samples are within a few σ
     let target_bits = if sigma_bits > 10 {
@@ -85,24 +85,24 @@ fn sample_large_variance_fallback(variance: &BigInt, rng: &mut impl Rng) -> BigI
     } else {
         rng.gen_range(1..=20)
     };
-    
+
     // Generate random bytes for this bit length
     let byte_count = (target_bits / 8 + 1) as usize;
     let mut bytes = vec![0u8; byte_count];
     rng.fill_bytes(&mut bytes);
-    
+
     // Ensure we get the right bit length by setting high bit
     if !bytes.is_empty() && target_bits > 8 {
         bytes[0] |= 0x80;
     }
-    
+
     let mut sample = BigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes);
-    
+
     // Apply random sign
     if rng.gen::<bool>() {
         sample = -sample;
     }
-    
+
     sample
 }
 
@@ -143,7 +143,7 @@ fn sample_single_gaussian(bound: &BigInt, rng: &mut impl Rng) -> BigInt {
     let bound_f64 = bound.to_f64().unwrap_or(f64::INFINITY);
     if bound_f64 > 1e15 {
         // For very large bounds, just return a random value in a reasonable range
-        let reasonable_bound = BigInt::from(1000000i64);
+        let _reasonable_bound = BigInt::from(1000000i64);
         let sign = if rng.gen::<bool>() { 1 } else { -1 };
         return BigInt::from(rng.gen_range(0..=1000000) * sign);
     }
@@ -168,7 +168,7 @@ fn sample_truncated_gaussian_ratio(rng: &mut impl Rng, sigma: f64) -> f64 {
     if sigma > 0.3 {
         return rng.gen_range(-1.0..=1.0);
     }
-    
+
     // Try up to 1000 times to avoid infinite loops
     for _ in 0..1000 {
         let z = box_muller(rng); // z ~ N(0, 1)
@@ -177,7 +177,7 @@ fn sample_truncated_gaussian_ratio(rng: &mut impl Rng, sigma: f64) -> f64 {
             return r;
         }
     }
-    
+
     // Fallback: return uniform random value in range
     rng.gen_range(-1.0..=1.0)
 }
@@ -250,11 +250,11 @@ mod tests {
 
         // With large variance, should get some large values
         let has_large_values = samples.iter().any(|x| x.bits() > 50);
-        
+
         let max_bits = samples.iter().map(|x| x.bits()).max().unwrap_or(0);
         println!("Maximum bits in samples: {}", max_bits);
         println!("Large variance bits: {}", large_variance.bits());
-        
+
         assert!(
             has_large_values,
             "Should have some large values with 100-bit variance. Max bits: {}",
@@ -395,13 +395,18 @@ mod tests {
         // Test the main function directly
         let bound = BigInt::from(1000u32);
         let samples = sample_discrete_gaussian_vec(&bound, 100);
-        
+
         assert_eq!(samples.len(), 100);
-        
+
         // All samples should be within bounds
         for sample in &samples {
-            assert!(sample >= &(-&bound) && sample <= &bound, 
-                   "Sample {} outside bounds [-{}, {}]", sample, bound, bound);
+            assert!(
+                sample >= &(-&bound) && sample <= &bound,
+                "Sample {} outside bounds [-{}, {}]",
+                sample,
+                bound,
+                bound
+            );
         }
     }
 }

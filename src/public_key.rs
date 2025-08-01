@@ -130,24 +130,32 @@ impl PublicKey {
             let coeffs_i64: Vec<i64> = if coeffs_view.nrows() == 1 {
                 // Single modulus case - convert with proper signed representation
                 let q = secret_key.params.context.moduli[0];
-                coeffs_view.row(0).iter().map(|&x| {
-                    if x > q / 2 {
-                        (x as i64) - (q as i64)  // Convert large positive to negative
-                    } else {
-                        x as i64
-                    }
-                }).collect()
+                coeffs_view
+                    .row(0)
+                    .iter()
+                    .map(|&x| {
+                        if x > q / 2 {
+                            (x as i64) - (q as i64) // Convert large positive to negative
+                        } else {
+                            x as i64
+                        }
+                    })
+                    .collect()
             } else {
                 // Multiple moduli case - for now, just use first modulus as placeholder
                 // TODO: Implement proper CRT reconstruction
                 let q = secret_key.params.context.moduli[0];
-                coeffs_view.row(0).iter().map(|&x| {
-                    if x > q / 2 {
-                        (x as i64) - (q as i64)
-                    } else {
-                        x as i64
-                    }
-                }).collect()
+                coeffs_view
+                    .row(0)
+                    .iter()
+                    .map(|&x| {
+                        if x > q / 2 {
+                            (x as i64) - (q as i64)
+                        } else {
+                            x as i64
+                        }
+                    })
+                    .collect()
             };
 
             key_matrix.push(coeffs_i64);
@@ -438,8 +446,8 @@ mod tests {
         PvwParametersBuilder::new()
             .set_parties(5)
             .set_dimension(4)
-            .set_l(32)  // Use smaller degree that works
-            .set_moduli(&test_moduli())  // Use working NTT-friendly moduli
+            .set_l(32) // Use smaller degree that works
+            .set_moduli(&test_moduli()) // Use working NTT-friendly moduli
             .build_arc()
             .unwrap()
     }

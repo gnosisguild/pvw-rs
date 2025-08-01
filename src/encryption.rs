@@ -23,7 +23,7 @@ pub fn encrypt<R: RngCore + CryptoRng>(
     pk: &GlobalPublicKey,
     scalars: &[u64],
 ) -> Result<PvwCiphertext> {
-    let q = &params.q;
+    let q = &params.q_total();
     let k = params.k;
     let g = params.gadget_vector()?;
     if g.len() != scalars.len() {
@@ -47,14 +47,14 @@ pub fn encrypt<R: RngCore + CryptoRng>(
         .map(|x| x.to_i64().expect("BigUint didn’t fit in i64"))
         .collect();
 
-    let e1 = sample_vec_cbd(k, pk.params.variance, rng)
+    let e1 = sample_vec_cbd(k, pk.params.secret_variance.try_into().unwrap(), rng)
         .map_err(|e| PvwError::InvalidParameters(format!("Failed to sample noise: {}", e)))?;
 
-    let e2 = sample_vec_cbd(k, pk.params.variance, rng)
+    let e2 = sample_vec_cbd(k, pk.params.secret_variance.try_into().unwrap(), rng)
         .map_err(|e| PvwError::InvalidParameters(format!("Failed to sample noise: {}", e)))?;
 
     // TODO: Ask if this should be sk params
-    let r = sample_vec_cbd(k, pk.params.variance, rng)
+    let r = sample_vec_cbd(k, pk.params.secret_variance.try_into().unwrap(), rng)
         .map_err(|e| PvwError::InvalidParameters(format!("Failed to sample r: {}", e)))?;
 
     let a = pk.crs.clone();
