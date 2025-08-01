@@ -3,7 +3,7 @@
 use std::{env, error::Error, process::exit};
 
 use console::style;
-use pvw::{PvwParametersBuilder, PvwCrs, SecretKey, Party, GlobalPublicKey};
+use pvw::{GlobalPublicKey, Party, PvwCrs, PvwParametersBuilder};
 use rand::rngs::OsRng;
 
 fn print_notice_and_exit(error: Option<String>) {
@@ -126,15 +126,32 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Display moduli information
     let q_total = params.q_total();
-    println!("\ttotal_modulus (Q) = {} (~{} bits)", q_total, q_total.bits());
+    println!(
+        "\ttotal_modulus (Q) = {} (~{} bits)",
+        q_total,
+        q_total.bits()
+    );
     println!("\tmoduli_count = {}", params.moduli().len());
     for (i, &modulus) in params.moduli().iter().enumerate() {
-        println!("\t\tq[{}] = {} (~{} bits)", i, modulus, 64 - modulus.leading_zeros());
+        println!(
+            "\t\tq[{}] = {} (~{} bits)",
+            i,
+            modulus,
+            64 - modulus.leading_zeros()
+        );
     }
 
     // Display error bounds
-    println!("\terror_bound_1 = {} (~{} bits)", params.error_bound_1, params.error_bound_1.bits());
-    println!("\terror_bound_2 = {} (~{} bits)", params.error_bound_2, params.error_bound_2.bits());
+    println!(
+        "\terror_bound_1 = {} (~{} bits)",
+        params.error_bound_1,
+        params.error_bound_1.bits()
+    );
+    println!(
+        "\terror_bound_2 = {} (~{} bits)",
+        params.error_bound_2,
+        params.error_bound_2.bits()
+    );
 
     println!("\n# Parameter Analysis");
 
@@ -158,8 +175,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut rng = OsRng;
     let crs = PvwCrs::new(&params, &mut rng)?;
 
-    println!("\tCRS validation: {}", if crs.validate().is_ok() { "✓ PASSED" } else { "✗ FAILED" });
-    println!("\tCRS matrix A ∈ R_q^({}×{})", crs.dimensions().0, crs.dimensions().1);
+    println!(
+        "\tCRS validation: {}",
+        if crs.validate().is_ok() {
+            "✓ PASSED"
+        } else {
+            "✗ FAILED"
+        }
+    );
+    println!(
+        "\tCRS matrix A ∈ R_q^({}×{})",
+        crs.dimensions().0,
+        crs.dimensions().1
+    );
     println!("\tCRS polynomial degree: {}", params.l);
     println!("\tCRS representation: NTT (optimized for multiplication)");
 
@@ -172,7 +200,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let mut display_poly = poly.clone();
                 display_poly.change_representation(fhe_math::rq::Representation::PowerBasis);
                 let coeffs = display_poly.coefficients();
-                
+
                 println!("\t\tA[{},{}] coefficients (first 5):", i, j);
                 if coeffs.nrows() > 0 {
                     let first_row = coeffs.row(0);
@@ -188,23 +216,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Demonstrate key generation workflow
-    println!("\n# Key Generation Demo (k={}, l={})", dimension, redundancy);
-    
+    println!(
+        "\n# Key Generation Demo (k={}, l={})",
+        dimension, redundancy
+    );
+
     // Generate some parties
     let num_demo_parties = std::cmp::min(3, num_parties);
     let mut parties = Vec::new();
     println!("\tGenerating {} demo parties:", num_demo_parties);
-    
+
     for i in 0..num_demo_parties {
         let party = Party::new(i, &params, &mut rng)?;
         println!("\t\tParty {}: secret key generated (CBD coefficients)", i);
-        
+
         // Show sample secret key coefficients
         let sk_coeffs = party.secret_key().coefficients();
         if !sk_coeffs.is_empty() && !sk_coeffs[0].is_empty() {
-            println!("\t\t\tSample coefficients: {:?}", &sk_coeffs[0][..std::cmp::min(5, sk_coeffs[0].len())]);
+            println!(
+                "\t\t\tSample coefficients: {:?}",
+                &sk_coeffs[0][..std::cmp::min(5, sk_coeffs[0].len())]
+            );
         }
-        
+
         parties.push(party);
     }
 
@@ -212,9 +246,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("\tGenerating global public key...");
     let mut global_pk = GlobalPublicKey::new(crs);
     global_pk.generate_all_party_keys(&parties, &mut rng)?;
-    
-    println!("\t✓ Global public key generated for {} parties", global_pk.num_public_keys());
-    println!("\t✓ Public key validation: {}", if global_pk.validate().is_ok() { "PASSED" } else { "FAILED" });
+
+    println!(
+        "\t✓ Global public key generated for {} parties",
+        global_pk.num_public_keys()
+    );
+    println!(
+        "\t✓ Public key validation: {}",
+        if global_pk.validate().is_ok() {
+            "PASSED"
+        } else {
+            "FAILED"
+        }
+    );
 
     // Display size estimates
     println!("\n# Size Analysis (k={}, l={})", dimension, redundancy);
@@ -222,32 +266,69 @@ fn main() -> Result<(), Box<dyn Error>> {
     let crs_size_kb = (dimension * dimension * poly_size_bits) as f64 / (8.0 * 1024.0);
     let sk_size_kb = (dimension * poly_size_bits) as f64 / (8.0 * 1024.0);
     let pk_size_kb = (dimension * poly_size_bits) as f64 / (8.0 * 1024.0);
-    
+
     println!("\tEstimated sizes (coefficient form):");
-    println!("\t\tCRS matrix: ~{:.1} KB ({} polynomials of degree {})", crs_size_kb, dimension * dimension, redundancy);
-    println!("\t\tSecret key: ~{:.1} KB ({} polynomials of degree {})", sk_size_kb, dimension, redundancy);
-    println!("\t\tPublic key: ~{:.1} KB ({} polynomials of degree {})", pk_size_kb, dimension, redundancy);
-    println!("\t\tGlobal public key: ~{:.1} KB ({} party keys)", pk_size_kb * num_parties as f64, num_parties);
+    println!(
+        "\t\tCRS matrix: ~{:.1} KB ({} polynomials of degree {})",
+        crs_size_kb,
+        dimension * dimension,
+        redundancy
+    );
+    println!(
+        "\t\tSecret key: ~{:.1} KB ({} polynomials of degree {})",
+        sk_size_kb, dimension, redundancy
+    );
+    println!(
+        "\t\tPublic key: ~{:.1} KB ({} polynomials of degree {})",
+        pk_size_kb, dimension, redundancy
+    );
+    println!(
+        "\t\tGlobal public key: ~{:.1} KB ({} party keys)",
+        pk_size_kb * num_parties as f64,
+        num_parties
+    );
 
     // Display computational benefits
     println!("\n# Performance Features");
     println!("\t✓ NTT-optimized polynomial multiplication: O(l log l)");
-    println!("\t✓ RNS arithmetic for large moduli: {} components", params.moduli().len());
+    println!(
+        "\t✓ RNS arithmetic for large moduli: {} components",
+        params.moduli().len()
+    );
     println!("\t✓ Coefficient-based storage: zero-cost coefficient access");
     println!("\t✓ On-demand polynomial conversion: convert only when needed");
     println!("\t✓ fhe.rs integration: production-grade lattice cryptography");
 
     // Display summary
     println!("\n# Setup Complete");
-    println!("✓ PVW parameters generated successfully (k={}, l={})", dimension, redundancy);
-    println!("✓ Gadget vector computed (Δ = {}, {} elements)", delta, gadget_vector.len());
-    println!("✓ CRS matrix A generated ({}×{} polynomials in NTT form)", dimension, dimension);
-    println!("✓ Demo key generation completed ({} parties)", num_demo_parties);
+    println!(
+        "✓ PVW parameters generated successfully (k={}, l={})",
+        dimension, redundancy
+    );
+    println!(
+        "✓ Gadget vector computed (Δ = {}, {} elements)",
+        delta,
+        gadget_vector.len()
+    );
+    println!(
+        "✓ CRS matrix A generated ({}×{} polynomials in NTT form)",
+        dimension, dimension
+    );
+    println!(
+        "✓ Demo key generation completed ({} parties)",
+        num_demo_parties
+    );
     println!("✓ All validations passed");
 
     println!("\n🚀 Ready for PVW multi-receiver encryption protocol!");
-    println!("   • Security parameter k = {} (increased security)", dimension);
-    println!("   • Polynomial degree l = {} (minimal for efficiency)", redundancy);
+    println!(
+        "   • Security parameter k = {} (increased security)",
+        dimension
+    );
+    println!(
+        "   • Polynomial degree l = {} (minimal for efficiency)",
+        redundancy
+    );
     println!("   • Parties can encrypt to any subset");
     println!("   • Threshold decryption with t={} parties", params.t);
     println!("   • Efficient polynomial operations via NTT");

@@ -37,10 +37,8 @@ impl SecretKey {
         for _ in 0..params.k {
             // Sample coefficients directly - no polynomial conversion needed
             let coeffs = sample_vec_cbd(params.l, params.secret_variance as usize, rng)
-                .map_err(|e| {
-                    PvwError::SamplingError(format!("CBD sampling failed: {}", e))
-                })?;
-            
+                .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {}", e)))?;
+
             secret_coeffs.push(coeffs);
         }
 
@@ -56,11 +54,10 @@ impl SecretKey {
         let mut polys = Vec::with_capacity(self.params.k);
 
         for coeffs in &self.secret_coeffs {
-            let mut poly = Poly::from_coefficients(coeffs, &self.params.context)
-                .map_err(|e| {
-                    PvwError::SamplingError(format!("Failed to create polynomial: {:?}", e))
-                })?;
-            
+            let mut poly = Poly::from_coefficients(coeffs, &self.params.context).map_err(|e| {
+                PvwError::SamplingError(format!("Failed to create polynomial: {:?}", e))
+            })?;
+
             poly.change_representation(Representation::Ntt);
             polys.push(poly);
         }
@@ -72,7 +69,9 @@ impl SecretKey {
     pub fn get_polynomial(&self, index: usize) -> Result<Poly> {
         if index >= self.secret_coeffs.len() {
             return Err(PvwError::InvalidParameters(format!(
-                "Index {} out of bounds for {} polynomials", index, self.secret_coeffs.len()
+                "Index {} out of bounds for {} polynomials",
+                index,
+                self.secret_coeffs.len()
             )));
         }
 
@@ -80,7 +79,7 @@ impl SecretKey {
             .map_err(|e| {
                 PvwError::SamplingError(format!("Failed to create polynomial: {:?}", e))
             })?;
-        
+
         poly.change_representation(Representation::Ntt);
         Ok(poly)
     }
@@ -148,7 +147,9 @@ impl SecretKey {
             if coeffs.len() != self.params.l {
                 return Err(PvwError::InvalidParameters(format!(
                     "Secret key polynomial {} has {} coefficients but l={}",
-                    i, coeffs.len(), self.params.l
+                    i,
+                    coeffs.len(),
+                    self.params.l
                 )));
             }
         }
@@ -159,7 +160,7 @@ impl SecretKey {
     /// Check if coefficients are within expected CBD bounds
     pub fn validate_coefficient_bounds(&self) -> Result<()> {
         let max_bound = 2 * self.params.secret_variance as i64;
-        
+
         for (poly_idx, coeffs) in self.secret_coeffs.iter().enumerate() {
             for (coeff_idx, &coeff) in coeffs.iter().enumerate() {
                 if coeff.abs() > max_bound {
@@ -183,7 +184,7 @@ impl SecretKey {
             params,
             secret_coeffs: coefficients,
         };
-        
+
         sk.validate()?;
         Ok(sk)
     }
@@ -196,7 +197,7 @@ impl SecretKey {
     /// Get coefficient statistics (for debugging)
     pub fn coefficient_stats(&self) -> (i64, i64, f64) {
         let all_coeffs: Vec<i64> = self.secret_coeffs.iter().flatten().copied().collect();
-        
+
         if all_coeffs.is_empty() {
             return (0, 0, 0.0);
         }
@@ -204,7 +205,7 @@ impl SecretKey {
         let min = *all_coeffs.iter().min().unwrap();
         let max = *all_coeffs.iter().max().unwrap();
         let mean = all_coeffs.iter().sum::<i64>() as f64 / all_coeffs.len() as f64;
-        
+
         (min, max, mean)
     }
 }
@@ -381,7 +382,7 @@ mod tests {
         let sk = SecretKey::random(&params, &mut rng).unwrap();
 
         let (min, max, mean) = sk.coefficient_stats();
-        
+
         // With CBD variance = 1, expect range [-2, 2]
         assert!(min >= -2);
         assert!(max <= 2);
@@ -391,13 +392,29 @@ mod tests {
     #[test]
     fn test_from_coefficients_constructor() {
         let params = create_test_params();
-        
+
         // Create test coefficients
         let test_coeffs = vec![
-            vec![1, -1, 0, 1].into_iter().cycle().take(params.l).collect(),
-            vec![0, 1, -1, 0].into_iter().cycle().take(params.l).collect(),
-            vec![-1, 0, 1, -1].into_iter().cycle().take(params.l).collect(),
-            vec![1, 0, 0, -1].into_iter().cycle().take(params.l).collect(),
+            vec![1, -1, 0, 1]
+                .into_iter()
+                .cycle()
+                .take(params.l)
+                .collect(),
+            vec![0, 1, -1, 0]
+                .into_iter()
+                .cycle()
+                .take(params.l)
+                .collect(),
+            vec![-1, 0, 1, -1]
+                .into_iter()
+                .cycle()
+                .take(params.l)
+                .collect(),
+            vec![1, 0, 0, -1]
+                .into_iter()
+                .cycle()
+                .take(params.l)
+                .collect(),
         ];
 
         let sk = SecretKey::from_coefficients(params.clone(), test_coeffs.clone()).unwrap();
@@ -431,10 +448,14 @@ mod tests {
         let mut sk = SecretKey::random(&params, &mut rng).unwrap();
 
         // Verify we have non-zero coefficients initially
-        let has_nonzero = sk.secret_coeffs
+        let has_nonzero = sk
+            .secret_coeffs
             .iter()
             .any(|row| row.iter().any(|&coeff| coeff != 0));
-        assert!(has_nonzero, "Secret key should have some non-zero coefficients");
+        assert!(
+            has_nonzero,
+            "Secret key should have some non-zero coefficients"
+        );
 
         // Zeroize the secret key
         sk.zeroize();

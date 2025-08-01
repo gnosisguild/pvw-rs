@@ -3,7 +3,7 @@ use fhe_math::rq::{Context, Poly, Representation};
 use fhe_util::sample_vec_cbd;
 use num_bigint::BigInt;
 use num_bigint::BigUint;
-use num_traits::{One, Zero, ToPrimitive};
+use num_traits::{One, ToPrimitive};
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use thiserror::Error;
@@ -113,14 +113,14 @@ impl PvwParametersBuilder {
         }
 
         // Fixed bounds based on your specification:
-        
+
         // 1. Secret key variance (defaults to 1 for minimal coefficients)
         let secret_variance = self.secret_variance.unwrap_or(1u32);
 
         // 2. Error 1 bound: 2^94 - 1
         let error_bound_1 = BigInt::from(2u128.pow(94)) - BigInt::from(1u32);
 
-        // 3. Error 2 bound: 2^114 - 1  
+        // 3. Error 2 bound: 2^114 - 1
         let error_bound_2 = BigInt::from(2u128.pow(114)) - BigInt::from(1u32);
 
         // Set t < n/2 (honest majority)
@@ -152,9 +152,8 @@ impl PvwParameters {
     /// Sample secret key polynomial with variance = 1 (CBD with minimal coefficients)
     pub fn sample_secret_polynomial<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Result<Poly> {
         // Convert u32 variance to usize for sample_vec_cbd
-        let coeffs = sample_vec_cbd(self.l, self.secret_variance as usize, rng).map_err(|e| {
-            PvwError::SamplingError(format!("CBD sampling failed: {}", e))
-        })?;
+        let coeffs = sample_vec_cbd(self.l, self.secret_variance as usize, rng)
+            .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {}", e)))?;
 
         let mut poly = Poly::from_coefficients(&coeffs, &self.context).map_err(|e| {
             PvwError::SamplingError(format!("Failed to create polynomial: {:?}", e))
@@ -168,7 +167,7 @@ impl PvwParameters {
     pub fn sample_error_1<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Result<Poly> {
         // Use discrete Gaussian sampling with bound - returns Vec<BigInt>
         let coeffs_bigint = sample_discrete_gaussian_vec(&self.error_bound_1, self.l);
-        
+
         // Convert BigInt coefficients to i64 for polynomial creation
         let coeffs_i64: Vec<i64> = coeffs_bigint
             .iter()
@@ -187,7 +186,7 @@ impl PvwParameters {
     pub fn sample_error_2<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Result<Poly> {
         // Use discrete Gaussian sampling with bound - returns Vec<BigInt>
         let coeffs_bigint = sample_discrete_gaussian_vec(&self.error_bound_2, self.l);
-        
+
         // Convert BigInt coefficients to i64 for polynomial creation
         let coeffs_i64: Vec<i64> = coeffs_bigint
             .iter()
@@ -228,7 +227,7 @@ impl PvwParameters {
             delta_power = (&delta_power * &delta) % &q_total;
             coefficients.push(coeff_big);
         }
-        
+
         // Convert to i64 coefficients
         let i64_coeffs: Vec<i64> = coefficients
             .iter()
@@ -297,6 +296,7 @@ impl PvwParameters {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_traits::Zero;
 
     /// Standard NTT-friendly moduli for testing
     fn test_moduli() -> Vec<u64> {
@@ -310,44 +310,44 @@ mod tests {
     #[test]
     fn test_parameter_builder() {
         // Test with multiple NTT-friendly moduli for RNS
-        let moduli = test_moduli();  // Use the helper function
-        
+        let moduli = test_moduli(); // Use the helper function
+
         let params = PvwParametersBuilder::new()
             .set_parties(10)
             .set_dimension(4)
-            .set_l(32)  // Start with smaller degree
-            .set_moduli(&moduli)  // Use the moduli from helper function
+            .set_l(32) // Start with smaller degree
+            .set_moduli(&moduli) // Use the moduli from helper function
             .build()
             .unwrap();
 
         assert_eq!(params.n, 10);
         assert_eq!(params.k, 4);
         assert_eq!(params.l, 32);
-        assert_eq!(params.secret_variance, 1u32);  // Default value
-        assert_eq!(params.context.moduli.len(), 3);  // Should have 3 moduli
-        
+        assert_eq!(params.secret_variance, 1u32); // Default value
+        assert_eq!(params.context.moduli.len(), 3); // Should have 3 moduli
+
         // Bounds should be fixed values
         let expected_bound_1 = BigInt::from(2u128.pow(94)) - BigInt::from(1u32);
         let expected_bound_2 = BigInt::from(2u128.pow(114)) - BigInt::from(1u32);
         assert_eq!(params.error_bound_1, expected_bound_1);
         assert_eq!(params.error_bound_2, expected_bound_2);
-        assert!(params.error_bound_2 > params.error_bound_1);  // Error 2 > Error 1
+        assert!(params.error_bound_2 > params.error_bound_1); // Error 2 > Error 1
     }
 
     #[test]
     fn test_custom_secret_variance() {
         let moduli = test_moduli();
-        
+
         let params = PvwParametersBuilder::new()
             .set_parties(10)
             .set_dimension(4)
             .set_l(32)
             .set_moduli(&moduli)
-            .set_secret_variance(2u32)  // Custom variance
+            .set_secret_variance(2u32) // Custom variance
             .build()
             .unwrap();
 
-        assert_eq!(params.secret_variance, 2u32);  // Should use custom value
+        assert_eq!(params.secret_variance, 2u32); // Should use custom value
     }
 
     #[test]
@@ -355,15 +355,15 @@ mod tests {
         let params = PvwParametersBuilder::new()
             .set_parties(1000)
             .set_dimension(4)
-            .set_l(64)  // Keep 64 for this test
-            .set_moduli(&test_moduli())  // Use RNS moduli
+            .set_l(64) // Keep 64 for this test
+            .set_moduli(&test_moduli()) // Use RNS moduli
             .build_arc()
             .unwrap();
 
         assert_eq!(params.l, 64);
-        assert_eq!(params.secret_variance, 1u32);  // Default value
-        assert_eq!(params.context.moduli.len(), 3);  // Should have 3 moduli
-        
+        assert_eq!(params.secret_variance, 1u32); // Default value
+        assert_eq!(params.context.moduli.len(), 3); // Should have 3 moduli
+
         // Test fixed bounds
         let expected_bound_1 = BigInt::from(2u128.pow(94)) - BigInt::from(1u32);
         let expected_bound_2 = BigInt::from(2u128.pow(114)) - BigInt::from(1u32);
@@ -376,20 +376,20 @@ mod tests {
         let params = PvwParametersBuilder::new()
             .set_parties(10)
             .set_dimension(4)
-            .set_l(32)  // Smaller degree
-            .set_moduli(&test_moduli())  // Use RNS moduli
+            .set_l(32) // Smaller degree
+            .set_moduli(&test_moduli()) // Use RNS moduli
             .build_arc()
             .unwrap();
 
         // Verify we can use fhe.rs Context features we need
         assert_eq!(params.context.degree, 32);
-        assert_eq!(params.context.moduli.len(), 3);  // Should have 3 moduli
+        assert_eq!(params.context.moduli.len(), 3); // Should have 3 moduli
         assert!(params.context.ops.len() > 0); // Should have NTT operators
-        
+
         // Test that we can access the moduli through the public interface
         assert_eq!(params.moduli().len(), 3);
         assert_eq!(params.ntt_operators().len(), 3);
-        
+
         // Verify the moduli values match what we set
         let expected_moduli = test_moduli();
         for (i, &expected) in expected_moduli.iter().enumerate() {
@@ -402,8 +402,8 @@ mod tests {
         let params = PvwParametersBuilder::new()
             .set_parties(10)
             .set_dimension(4)
-            .set_l(32)  // Smaller degree
-            .set_moduli(&test_moduli())  // Use RNS moduli
+            .set_l(32) // Smaller degree
+            .set_moduli(&test_moduli()) // Use RNS moduli
             .build_arc()
             .unwrap();
 
@@ -419,11 +419,11 @@ mod tests {
         // Test that bounds are set correctly
         let bound_94 = BigInt::from(2u128.pow(94)) - BigInt::from(1u32);
         let bound_114 = BigInt::from(2u128.pow(114)) - BigInt::from(1u32);
-        
-        assert!(bound_114 > bound_94);  // Larger bound should be larger
+
+        assert!(bound_114 > bound_94); // Larger bound should be larger
         assert!(bound_94 > BigInt::from(0));
         assert!(bound_114 > BigInt::from(0));
-        
+
         // Test that the bounds are very large
         assert!(bound_94.bits() >= 94);
         assert!(bound_114.bits() >= 114);
@@ -434,8 +434,8 @@ mod tests {
         let params = PvwParametersBuilder::new()
             .set_parties(10)
             .set_dimension(4)
-            .set_l(32)  // Smaller degree
-            .set_moduli(&test_moduli())  // Use RNS moduli
+            .set_l(32) // Smaller degree
+            .set_moduli(&test_moduli()) // Use RNS moduli
             .build_arc()
             .unwrap();
 
@@ -445,7 +445,7 @@ mod tests {
 
         assert!(delta > BigUint::one());
         assert_eq!(gadget_vector.len(), params.l);
-        
+
         // Test RNS features
         let q_total = params.q_total();
         assert!(q_total > BigUint::zero());
