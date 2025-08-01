@@ -57,16 +57,24 @@ pub fn decrypt(
         y_i.push(&y[i + 1] - &delta_y_i);
     }
 
-    // Decoding step 2
+    // Decoding step 2: Set z := Σ_{i=1}^{l-1} Δ^{l-i-1} · y_i
     let mut z = Poly::zero(ctx, Representation::Ntt);
     for i in 0..l - 1 {
-        // Create polynomial for g[i]
-        let g_i_poly =
-            Poly::from_coefficients(&[g[l - 1 - i].to_i64().unwrap()], ctx).map_err(|e| {
-                PvwError::InvalidParameters(format!("Failed to create g_i polynomial: {}", e))
-            })?;
-
-        z += &(&g_i_poly * &y_i[i]);
+        let power = l - i - 2; // l-i-1-1 in 0-indexed
+        let mut delta_power_poly = if power == 0 {
+            // Δ^0 = 1
+            Poly::from_coefficients(&[1i64], ctx).map_err(|e| {
+                PvwError::InvalidParameters(format!("Failed to create constant polynomial: {}", e))
+            })?
+        } else {
+            let delta_pow = delta.pow(power as u32);
+            Poly::from_coefficients(&[delta_pow.to_i64().unwrap()], ctx).map_err(|e| {
+                PvwError::InvalidParameters(format!("Failed to create delta^{} polynomial: {}", power, e))
+            })?
+        };
+        delta_power_poly.change_representation(Representation::Ntt);
+        
+        z += &(&delta_power_poly * &y_i[i]);
     }
 
     // Decoding step 3
