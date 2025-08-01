@@ -181,7 +181,7 @@ impl PvwCrs {
             let mut sum = Poly::zero(&self.params.context, Representation::Ntt);
 
             for j in 0..self.params.k {
-                let sk_poly = secret_key.get_polynomial(j)?;  // Returns Result<Poly>
+                let sk_poly = secret_key.get_polynomial(j)?; // Returns Result<Poly>
                 let crs_poly = self
                     .get(j, i)
                     .ok_or_else(|| PvwError::InvalidParameters("Invalid CRS index".to_string()))?;
@@ -292,8 +292,8 @@ mod tests {
         PvwParametersBuilder::new()
             .set_parties(10)
             .set_dimension(4)
-            .set_l(32)  // Use smaller degree that works
-            .set_moduli(&test_moduli())  // Use working NTT-friendly moduli
+            .set_l(32) // Use smaller degree that works
+            .set_moduli(&test_moduli()) // Use working NTT-friendly moduli
             .build_arc()
             .unwrap()
     }
@@ -444,9 +444,9 @@ mod tests {
     #[test]
     fn test_different_parameter_sizes() {
         let test_cases = vec![
-            (1, 32),  // Single polynomial, power of 2 coefficients
-            (2, 32),  // Two polynomials
-            (4, 64),  // Moderate size
+            (1, 32), // Single polynomial, power of 2 coefficients
+            (2, 32), // Two polynomials
+            (4, 64), // Moderate size
         ];
 
         let mut rng = thread_rng();
@@ -456,7 +456,7 @@ mod tests {
                 .set_parties(10)
                 .set_dimension(k)
                 .set_l(l)
-                .set_moduli(&test_moduli())  // Use working moduli
+                .set_moduli(&test_moduli()) // Use working moduli
                 .build_arc()
                 .unwrap();
 

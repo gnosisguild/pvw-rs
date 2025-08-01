@@ -298,6 +298,7 @@ mod tests {
     use num_traits::Zero;
 
     use super::*;
+    use num_traits::Zero;
 
     /// Standard NTT-friendly moduli for testing
     fn test_moduli() -> Vec<u64> {

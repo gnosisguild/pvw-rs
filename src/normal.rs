@@ -1,5 +1,5 @@
 use num_bigint::BigInt;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{ToPrimitive, Zero};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 use std::f64::consts::PI;
@@ -143,7 +143,7 @@ fn sample_single_gaussian(bound: &BigInt, rng: &mut impl Rng) -> BigInt {
     let bound_f64 = bound.to_f64().unwrap_or(f64::INFINITY);
     if bound_f64 > 1e15 {
         // For very large bounds, just return a random value in a reasonable range
-        let _reasonable_bound = BigInt::from(1000000i64);
+        // let reasonable_bound = BigInt::from(1000000i64);
         let sign = if rng.gen::<bool>() { 1 } else { -1 };
         return BigInt::from(rng.gen_range(0..=1000000) * sign);
     }
@@ -215,6 +215,7 @@ fn ratio_to_bigint(ratio: f64, bound: &BigInt) -> BigInt {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_traits::{Signed, ToPrimitive, Zero};
     use rand::thread_rng;
     use std::str::FromStr;
 
@@ -304,12 +305,8 @@ mod tests {
         assert_eq!(samples_bits.len(), 50);
 
         // Test single sample functions
-        let single1 = sample_bigint_normal_u64(100);
-        let single2 = sample_bigint_normal_bits(10);
-
-        // Should be valid BigInt values (basic check)
-        assert!(single1.bits() >= 0);
-        assert!(single2.bits() >= 0);
+        sample_bigint_normal_u64(100);
+        sample_bigint_normal_bits(10);
     }
 
     #[test]
