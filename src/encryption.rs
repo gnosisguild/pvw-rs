@@ -77,23 +77,20 @@ pub fn encrypt<R: RngCore + CryptoRng>(
         })?;
 
         // Create polynomial for e1[i]
-        let mut e1_i_poly = Poly::from_coefficients(&[e1[i].clone()], ctx).map_err(|e| {
+        let e1_i_poly = Poly::from_coefficients(&[e1[i].clone()], ctx).map_err(|e| {
             PvwError::InvalidParameters(format!("Failed to create e1 polynomial: {}", e))
         })?;
-        e1_i_poly.change_representation(Representation::Ntt);
 
         // Create polynomial for e2[i]
-        let mut e2_i_poly = Poly::from_coefficients(&[e2[i].clone()], ctx).map_err(|e| {
+        let e2_i_poly = Poly::from_coefficients(&[e2[i].clone()], ctx).map_err(|e| {
             PvwError::InvalidParameters(format!("Failed to create e2 polynomial: {}", e))
         })?;
-        e2_i_poly.change_representation(Representation::Ntt);
 
         for j in 0..k {
             // Create polynomial for r[j]
-            let mut r_j_poly = Poly::from_coefficients(&[r[j].clone()], ctx).map_err(|e| {
+            let r_j_poly = Poly::from_coefficients(&[r[j].clone()], ctx).map_err(|e| {
                 PvwError::InvalidParameters(format!("Failed to create r[j] polynomial: {}", e))
             })?;
-            r_j_poly.change_representation(Representation::Ntt);
 
             // A * r
             let a_ij = a.get(i, j).ok_or_else(|| {

@@ -36,30 +36,45 @@ pub fn decrypt(
 
             inner_product += &(&sk_i_poly * &ct.c1[i]);
         }
-
+        //xg + e
         y.push(&ct.c2[i] - &inner_product.clone());
     }
 
-    let mut z = Poly::zero(ctx, Representation::Ntt);
-    for i in 0..g.len() {
-        // Create polynomial for x[i]
-        let mut g_i_poly =
-            Poly::from_coefficients(&[g[i].to_i64().unwrap()], ctx).map_err(|e| {
-                PvwError::InvalidParameters(format!("Failed to create g_i polynomial: {}", e))
-            })?;
-        g_i_poly.change_representation(Representation::Ntt);
-
-        z += &(&g_i_poly * &y[i]);
+    // Decoding step 1
+    let mut y_i = Vec::with_capacity(k);
+    let g_i_poly = Poly::from_coefficients(&[g[l].to_i64().unwrap()], ctx).map_err(|e| {
+        PvwError::InvalidParameters(format!("Failed to create g_l polynomial: {}", e))
+    })?;
+    for i in 0..l - 1 {
+        y_i.push(&y[i + 1] - &(&g_i_poly * &y[i]));
     }
 
+    // Decoding step 2
+    let mut z = Poly::zero(ctx, Representation::Ntt);
+    for i in 0..l - 1 {
+        // Create polynomial for g[i]
+        let g_i_poly =
+            Poly::from_coefficients(&[g[l - 1 - i].to_i64().unwrap()], ctx).map_err(|e| {
+                PvwError::InvalidParameters(format!("Failed to create g_i polynomial: {}", e))
+            })?;
+
+        z += &(&g_i_poly * &y_i[i]);
+    }
+
+    // Decoding step 3
     let mut g_0_poly = Poly::from_coefficients(&[g[0].modinv(q).unwrap().to_i64().unwrap()], ctx)
         .map_err(|e| {
         PvwError::InvalidParameters(format!("Failed to create g_0 polynomial: {}", e))
     })?;
     g_0_poly.change_representation(Representation::Ntt);
-    let e = z;
 
-    let pt = &(&y[0] - &e) * &g_0_poly;
+    let mut e = Poly::zero(ctx, Representation::Ntt);
+    for i in 0..l {
+        //e = z
+    }
+
+    // y[0] - e / g_0
+    let pt = &y[0] * &g_0_poly;
 
     Ok(pt)
 }
