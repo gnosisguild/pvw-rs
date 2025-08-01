@@ -1,7 +1,9 @@
 use crate::encryption::PvwCiphertext;
 use crate::params::{PvwError, PvwParameters, Result};
 use crate::secret_key::SecretKey;
+use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Context, Poly, Representation};
+use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
 
@@ -11,11 +13,9 @@ pub fn decrypt(
     sk: &SecretKey,
     ctx: &Arc<Context>,
     ct: &PvwCiphertext,
-) -> Result<Poly> {
-    let q = &params.q;
+) -> Result<Vec<i64>> {
     let k = params.k;
     let l = params.l;
-    let g = params.gadget_vector()?;
 
     // Compute y = c2 - (c1 * s)
     if ct.c1.len() != k || sk.coeff_matrix.len() != k {
@@ -42,7 +42,7 @@ pub fn decrypt(
 
     // We have y = xg + e where g = (Δ^(l-1), ..., Δ, 1)
     // This corresponds to x'_i = xΔ^(l-i) + e_i in Fig.1 notation (1-indexed)
-    
+
     let delta = params.delta();
     let mut delta_poly = Poly::from_coefficients(&[delta.to_i64().unwrap()], ctx).map_err(|e| {
         PvwError::InvalidParameters(format!("Failed to create delta polynomial: {}", e))
@@ -69,11 +69,14 @@ pub fn decrypt(
         } else {
             let delta_pow = delta.pow(power as u32);
             Poly::from_coefficients(&[delta_pow.to_i64().unwrap()], ctx).map_err(|e| {
-                PvwError::InvalidParameters(format!("Failed to create delta^{} polynomial: {}", power, e))
+                PvwError::InvalidParameters(format!(
+                    "Failed to create delta^{} polynomial: {}",
+                    power, e
+                ))
             })?
         };
         delta_power_poly.change_representation(Representation::Ntt);
-        
+
         z += &(&delta_power_poly * &y_i[i]);
     }
 
@@ -88,25 +91,33 @@ pub fn decrypt(
 
     // Convert coefficients to BigUint and apply modulo reduction
     let coeffs: Vec<BigUint> = Vec::from(&z_copy);
-    let reduced_coeffs: Vec<BigUint> = coeffs.iter()
-        .map(|c| c % &delta_l_minus_1)
-        .collect();
+    let reduced_coeffs: Vec<BigUint> = coeffs.iter().map(|c| c % &delta_l_minus_1).collect();
 
     // Convert back to polynomial in power basis representation
     let mut e = Poly::try_convert_from(
         reduced_coeffs.as_slice(),
         z_copy.ctx(),
-        false,  // constant-time operations for security
-        Representation::PowerBasis
-    ).map_err(|e| {
-        PvwError::InvalidParameters(format!("Failed to convert coefficients back to polynomial: {}", e))
+        false, // constant-time operations for security
+        Representation::PowerBasis,
+    )
+    .map_err(|e| {
+        PvwError::InvalidParameters(format!(
+            "Failed to convert coefficients back to polynomial: {}",
+            e
+        ))
     })?;
-    
+
     // Convert back to NTT representation for further operations
-    e.change_representation(Representation::Ntt);
+    e.change_representation(Representation::PowerBasis);
 
-    // y[0] - e / g_0
-    let pt = &y[0] * &g_0_poly;
+    // Decoding step 4: x'_i[0] - e / delta^(l-1)
+    let numerator = &y_i[0] - &e;
+    let num_coeffs: Vec<BigUint> = Vec::from(&numerator);
+    let den_coeffs = vec![delta_l_minus_1];
 
-    Ok(pt)
+    let mut pt = Vec::new();
+    for i in 0..num_coeffs.len() {
+        pt.push((&num_coeffs[i] / &den_coeffs[i]).to_i64().unwrap());
+    }
+    Ok(pt.clone())
 }
