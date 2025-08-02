@@ -295,8 +295,6 @@ impl PvwParameters {
 
 #[cfg(test)]
 mod tests {
-    use num_traits::Zero;
-
     use super::*;
     use num_traits::Zero;
 

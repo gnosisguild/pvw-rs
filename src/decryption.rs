@@ -1,4 +1,4 @@
-use crate::encryption::PvwCiphertext;
+use crate::encryption::{pad, PvwCiphertext};
 use crate::params::{PvwError, PvwParameters, Result};
 use crate::secret_key::SecretKey;
 use crate::PvwParametersBuilder;
@@ -31,7 +31,8 @@ pub fn decrypt(
         let mut inner_product = Poly::zero(ctx, Representation::Ntt);
         let sk_vec = sk.secret_coeffs[i].clone();
         for j in 0..l {
-            let mut sk_i_poly = Poly::from_coefficients(&[sk_vec[j]], ctx).map_err(|e| {
+            // TODO: Probably not correct
+            let mut sk_i_poly = Poly::from_coefficients(&sk_vec.as_slice(), ctx).map_err(|e| {
                 PvwError::InvalidParameters(format!("Failed to create sk polynomial: {}", e))
             })?;
             sk_i_poly.change_representation(Representation::Ntt);
@@ -46,7 +47,8 @@ pub fn decrypt(
     // This corresponds to x'_i = xΔ^(l-i) + e_i in Fig.1 notation (1-indexed)
 
     let delta = params.delta();
-    let mut delta_poly = Poly::from_coefficients(&[delta.to_i64().unwrap()], ctx).map_err(|e| {
+    let delta_vec = pad(vec![delta.to_i64().unwrap()], l);
+    let mut delta_poly = Poly::from_coefficients(&delta_vec, ctx).map_err(|e| {
         PvwError::InvalidParameters(format!("Failed to create delta polynomial: {}", e))
     })?;
     delta_poly.change_representation(Representation::Ntt);
@@ -54,6 +56,7 @@ pub fn decrypt(
     // Decoding step 1: For i = 1, ..., l-1, let y_i := x'_{i+1} - Δx'_i mod q
     // In 0-indexed: y_i[i] := y[i+1] - Δ * y[i] for i = 0, ..., l-2
     let mut y_i = Vec::with_capacity(l - 1);
+    println!("{:#?}", y.len());
     for i in 0..l - 1 {
         let delta_y_i = &delta_poly * &y[i];
         y_i.push(&y[i + 1] - &delta_y_i);
@@ -143,7 +146,7 @@ mod tests {
 
     fn create_test_params() -> Arc<PvwParameters> {
         PvwParametersBuilder::new()
-            .set_parties(2)
+            .set_parties(5)
             .set_dimension(4)
             .set_l(32) // Use smaller degree that works
             .set_moduli(&test_moduli()) // Use working NTT-friendly moduli
@@ -151,32 +154,27 @@ mod tests {
             .unwrap()
     }
 
-    // #[test]
-    // fn test_enc_dec() {
-    //     let params = create_test_params();
-    //     let mut rng = thread_rng();
+    #[test]
+    fn test_enc_dec() {
+        let params = create_test_params();
+        let mut rng = thread_rng();
 
-    //     // Create parties
-    //     let party_0 = Party::new(0, &params, &mut rng).unwrap();
-    //     let party_1 = Party::new(1, &params, &mut rng).unwrap();
+        // Create secret keys directly
+        let sk = SecretKey::random(&params, &mut rng).unwrap();
+        let secret_keys = vec![sk.clone()];
 
-    //     let crs = PvwCrs::new(&params, &mut rng).unwrap();
-    //     let sk = SecretKey::random(&params, &mut rng).unwrap();
-    //     let mut global_pk = GlobalPublicKey::new(crs);
+        // Create global public key
+        let crs = PvwCrs::new(&params, &mut rng).unwrap();
+        let mut global_pk = GlobalPublicKey::new(crs);
 
-    //     // Generate and add public keys
-    //     global_pk
-    //         .generate_and_add_party(&party_0, &mut rng)
-    //         .unwrap();
-    //     global_pk
-    //         .generate_and_add_party(&party_1, &mut rng)
-    //         .unwrap();
+        // Generate keys from secret keys
+        global_pk.generate_all_keys(&secret_keys, &mut rng).unwrap();
 
-    //     let scalars: Vec<u64> = vec![1; 32];
+        let scalars: Vec<u64> = vec![1; 32];
 
-    //     let ct = encrypt(&params, &mut rng, &params.context, &global_pk, &scalars).unwrap();
-    //     let pt = decrypt(&params, &sk, &params.context, &ct).unwrap();
+        let ct = encrypt(&params, &mut rng, &params.context, &global_pk, &scalars).unwrap();
+        let pt = decrypt(&params, &sk, &params.context, &ct).unwrap();
 
-    //     println!("{:#?}", pt);
-    // }
+        println!("{:#?}", pt);
+    }
 }
