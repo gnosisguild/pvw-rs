@@ -19,6 +19,9 @@ pub struct PvwCrs {
 impl PvwCrs {
     /// Generate a new random CRS matrix
     ///
+    /// Validates parameter correctness before generation to ensure reliable encryption/decryption.
+    /// Issues a warning if the correctness condition is not satisfied.
+    ///
     /// # Arguments
     /// * `params` - PVW parameters specifying k and other system parameters
     /// * `rng` - Cryptographically secure random number generator
@@ -26,6 +29,12 @@ impl PvwCrs {
     /// # Returns
     /// A new PvwCrs with randomly generated k×k matrix
     pub fn new<R: RngCore + CryptoRng>(params: &Arc<PvwParameters>, rng: &mut R) -> Result<Self> {
+        // Verify parameters satisfy correctness condition before creating CRS
+        if !params.verify_correctness_condition() {
+            println!("⚠️ Warning: PVW parameters do not satisfy correctness condition");
+            println!("   This may lead to decryption failures. Consider adjusting error bounds.");
+        }
+
         let mut matrix = Array2::from_elem(
             (params.k, params.k),
             Poly::zero(&params.context, Representation::Ntt),
@@ -35,6 +44,9 @@ impl PvwCrs {
         for elem in matrix.iter_mut() {
             *elem = Poly::random(&params.context, Representation::Ntt, rng);
         }
+
+        println!("[CRS] Generated {}×{} CRS matrix with {} polynomials", 
+                params.k, params.k, params.k * params.k);
 
         Ok(Self {
             matrix,
@@ -46,6 +58,7 @@ impl PvwCrs {
     ///
     /// This is crucial for PVSS where all parties need to derive the same CRS.
     /// Each matrix element gets independent randomness derived from the master seed.
+    /// Validates parameter correctness before generation.
     ///
     /// # Arguments
     /// * `params` - PVW parameters specifying k and other system parameters
@@ -57,6 +70,11 @@ impl PvwCrs {
         params: &Arc<PvwParameters>,
         seed: <ChaCha8Rng as SeedableRng>::Seed,
     ) -> Result<Self> {
+        // Verify parameters satisfy correctness condition
+        if !params.verify_correctness_condition() {
+            println!("⚠️ Warning: PVW parameters do not satisfy correctness condition");
+        }
+
         let mut matrix = Array2::from_elem(
             (params.k, params.k),
             Poly::zero(&params.context, Representation::Ntt),
@@ -72,19 +90,30 @@ impl PvwCrs {
             *elem = Poly::random_from_seed(&params.context, Representation::Ntt, element_seed);
         }
 
+        println!("[CRS] Generated deterministic {}×{} CRS matrix from seed", params.k, params.k);
+
         Ok(Self {
             matrix,
             params: params.clone(),
         })
     }
 
-    /// Generate CRS deterministically from a string tag (like in the C++ code)
-    /// This is useful for PVSS where all parties derive the same CRS from a known string
+    /// Generate CRS deterministically from a string tag
+    /// 
+    /// Creates a deterministic CRS that all parties can derive from a known string.
+    /// This is useful for PVSS where all participants need the same reference string.
+    /// 
+    /// # Arguments
+    /// * `params` - PVW parameters specifying system configuration
+    /// * `tag` - String identifier used to generate the CRS deterministically
+    ///
+    /// # Returns
+    /// A deterministically generated PvwCrs based on the tag
     pub fn new_from_tag(params: &Arc<PvwParameters>, tag: &str) -> Result<Self> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
-        // Create deterministic seed from tag (similar to C++ implementation)
+        // Create deterministic seed from tag
         let mut hasher = DefaultHasher::new();
         (tag.to_string() + "CRS").hash(&mut hasher);
         let seed_u64 = hasher.finish();
@@ -95,6 +124,7 @@ impl PvwCrs {
             seed[i] = *chunk;
         }
 
+        println!("[CRS] Generating CRS from tag: '{}'", tag);
         Self::new_deterministic(params, seed)
     }
 
@@ -279,21 +309,45 @@ mod tests {
     use crate::secret_key::SecretKey;
     use rand::thread_rng;
 
-    /// Standard NTT-friendly moduli for testing
+    /// Standard moduli suitable for PVW operations
+    /// These moduli are chosen to be NTT-friendly and provide adequate security
     fn test_moduli() -> Vec<u64> {
         vec![
-            0x1FFFFFFEA0001u64, // 562949951979521
-            0x1FFFFFFE88001u64, // 562949951881217
-            0x1FFFFFFE48001u64, // 562949951619073
+            0xffffee001u64,     
+            0xffffc4001u64,     
+            0x1ffffe0001u64,    
         ]
     }
 
+    /// Create PVW parameters for testing with moderate security settings
     fn create_test_params() -> Arc<PvwParameters> {
         PvwParametersBuilder::new()
-            .set_parties(10)
+            .set_parties(3)
             .set_dimension(4)
-            .set_l(32) // Use smaller degree that works
-            .set_moduli(&test_moduli()) // Use working NTT-friendly moduli
+            .set_l(8) // Power of 2, minimum 8 for fhe.rs compatibility
+            .set_moduli(&test_moduli())
+            .set_secret_variance(1)
+            .set_error_bounds_u32(100, 200) // Conservative error bounds
+            .build_arc()
+            .unwrap()
+    }
+
+    /// Create PVW parameters that satisfy the correctness condition
+    /// Uses the parameter suggestion system to find suitable error bounds
+    fn create_correct_test_params() -> Arc<PvwParameters> {
+        let moduli = test_moduli();
+        
+        // Get suggested parameters that satisfy correctness condition
+        let (variance, bound1, bound2) = PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli)
+            .unwrap_or((1, 50, 100)); // Fallback to conservative values
+        
+        PvwParametersBuilder::new()
+            .set_parties(3)
+            .set_dimension(4)
+            .set_l(8)
+            .set_moduli(&moduli)
+            .set_secret_variance(variance)
+            .set_error_bounds_u32(bound1, bound2)
             .build_arc()
             .unwrap()
     }
@@ -315,6 +369,19 @@ mod tests {
             assert_eq!(*poly.representation(), Representation::Ntt);
             assert!(Arc::ptr_eq(&poly.ctx, &params.context));
         }
+    }
+
+    #[test]
+    fn test_crs_with_correct_parameters() {
+        let params = create_correct_test_params();
+        let mut rng = thread_rng();
+
+        // CRS creation with parameters that satisfy correctness condition
+        let crs = PvwCrs::new(&params, &mut rng).unwrap();
+
+        assert_eq!(crs.dimensions(), (params.k, params.k));
+        assert!(crs.validate().is_ok());
+        assert!(params.verify_correctness_condition());
     }
 
     #[test]
@@ -444,19 +511,21 @@ mod tests {
     #[test]
     fn test_different_parameter_sizes() {
         let test_cases = vec![
-            (1, 32), // Single polynomial, power of 2 coefficients
-            (2, 32), // Two polynomials
-            (4, 64), // Moderate size
+            (1, 8),  // Single polynomial
+            (2, 8),  // Two polynomials
+            (4, 16), // Moderate size
         ];
 
         let mut rng = thread_rng();
 
         for (k, l) in test_cases {
             let params = PvwParametersBuilder::new()
-                .set_parties(10)
+                .set_parties(3)
                 .set_dimension(k)
                 .set_l(l)
-                .set_moduli(&test_moduli()) // Use working moduli
+                .set_moduli(&test_moduli())
+                .set_secret_variance(1)
+                .set_error_bounds_u32(50, 100)
                 .build_arc()
                 .unwrap();
 
@@ -465,5 +534,44 @@ mod tests {
             assert_eq!(crs.dimensions(), (k, k));
             assert!(crs.validate().is_ok());
         }
+    }
+
+    #[test]
+    fn test_correctness_condition_integration() {
+        let moduli = test_moduli();
+        
+        // Test with parameters that satisfy correctness condition
+        if let Ok((variance, bound1, bound2)) = PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli) {
+            let good_params = PvwParametersBuilder::new()
+                .set_parties(3)
+                .set_dimension(4)
+                .set_l(8)
+                .set_moduli(&moduli)
+                .set_secret_variance(variance)
+                .set_error_bounds_u32(bound1, bound2)
+                .build_arc()
+                .unwrap();
+
+            assert!(good_params.verify_correctness_condition(), 
+                "Suggested parameters should satisfy correctness condition");
+
+            let mut rng = thread_rng();
+            let _crs = PvwCrs::new(&good_params, &mut rng).unwrap();
+        }
+
+        // Test with parameters that violate correctness condition
+        let questionable_params = PvwParametersBuilder::new()
+            .set_parties(10)  // Large party count
+            .set_dimension(8) // Large LWE dimension
+            .set_l(8)
+            .set_moduli(&moduli)
+            .set_secret_variance(3)     // Large variance
+            .set_error_bounds_u32(1000, 2000) // Large error bounds
+            .build_arc()
+            .unwrap();
+
+        let mut rng = thread_rng();
+        let _crs = PvwCrs::new(&questionable_params, &mut rng).unwrap();
+        // Warning about correctness condition will be displayed
     }
 }

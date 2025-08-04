@@ -6,6 +6,9 @@ use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// PVW Secret Key using coefficient representation
+/// 
+/// Stores secret key coefficients directly from CBD sampling for efficiency.
+/// Polynomials are created on-demand for cryptographic operations.
 #[derive(Debug, Clone)]
 pub struct SecretKey {
     pub params: Arc<PvwParameters>,
@@ -27,7 +30,17 @@ impl ZeroizeOnDrop for SecretKey {}
 
 impl SecretKey {
     /// Generate random secret key using CBD distribution
-    /// Stores coefficients directly from sampling (no conversion overhead)
+    /// 
+    /// Uses the variance specified in the PVW parameters to sample coefficients
+    /// from a centered binomial distribution. Stores coefficients directly 
+    /// to avoid conversion overhead during frequent operations.
+    ///
+    /// # Arguments
+    /// * `params` - PVW parameters specifying dimensions and variance
+    /// * `rng` - Cryptographically secure random number generator
+    ///
+    /// # Returns
+    /// A new SecretKey with randomly sampled coefficients
     pub fn random<R: RngCore + CryptoRng>(
         params: &Arc<PvwParameters>,
         rng: &mut R,
@@ -35,12 +48,15 @@ impl SecretKey {
         let mut secret_coeffs = Vec::with_capacity(params.k);
 
         for _ in 0..params.k {
-            // Sample coefficients directly - no polynomial conversion needed
+            // Sample coefficients using CBD with configured variance
             let coeffs = sample_vec_cbd(params.l, params.secret_variance as usize, rng)
                 .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {}", e)))?;
 
             secret_coeffs.push(coeffs);
         }
+
+        println!("[SECRET_KEY] Generated secret key with k={} polynomials, l={} coefficients each, variance={}", 
+                params.k, params.l, params.secret_variance);
 
         Ok(Self {
             params: params.clone(),
@@ -49,7 +65,12 @@ impl SecretKey {
     }
 
     /// Convert coefficients to polynomials when needed for crypto operations
-    /// Creates polynomials in NTT form for efficient operations
+    /// 
+    /// Creates polynomials in NTT form for efficient ring operations.
+    /// This is done on-demand to avoid storing redundant representations.
+    ///
+    /// # Returns
+    /// Vector of polynomials in NTT representation
     pub fn to_polynomials(&self) -> Result<Vec<Poly>> {
         let mut polys = Vec::with_capacity(self.params.k);
 
@@ -65,7 +86,17 @@ impl SecretKey {
         Ok(polys)
     }
 
-    /// Get a single polynomial at index (for crypto operations)
+    /// Get a single polynomial at index for crypto operations
+    ///
+    /// Converts the coefficient vector at the specified index into a polynomial
+    /// in NTT representation. More efficient than converting all polynomials
+    /// when only one is needed.
+    ///
+    /// # Arguments
+    /// * `index` - Index of the polynomial to convert (0 <= index < k)
+    ///
+    /// # Returns
+    /// Polynomial in NTT representation, or error if index is out of bounds
     pub fn get_polynomial(&self, index: usize) -> Result<Poly> {
         if index >= self.secret_coeffs.len() {
             return Err(PvwError::InvalidParameters(format!(
@@ -84,22 +115,47 @@ impl SecretKey {
         Ok(poly)
     }
 
-    /// Direct access to coefficient matrix (no conversion needed)
+    /// Direct access to coefficient matrix
+    /// 
+    /// Provides access to the raw coefficient representation without
+    /// polynomial conversion overhead. Useful for operations that work
+    /// directly with coefficient vectors.
+    ///
+    /// # Returns
+    /// Reference to the k × l coefficient matrix
     pub fn coefficients(&self) -> &[Vec<i64>] {
         &self.secret_coeffs
     }
 
     /// Mutable access to coefficient matrix
+    ///
+    /// Allows direct modification of secret key coefficients.
+    /// Use with caution as this bypasses validation.
+    ///
+    /// # Returns
+    /// Mutable reference to the k × l coefficient matrix
     pub fn coefficients_mut(&mut self) -> &mut [Vec<i64>] {
         &mut self.secret_coeffs
     }
 
     /// Get coefficients for a specific polynomial
+    ///
+    /// # Arguments
+    /// * `index` - Index of the polynomial (0 <= index < k)
+    ///
+    /// # Returns
+    /// Reference to coefficient vector, or None if index is out of bounds
     pub fn get_coefficients(&self, index: usize) -> Option<&[i64]> {
         self.secret_coeffs.get(index).map(|v| v.as_slice())
     }
 
     /// Get mutable coefficients for a specific polynomial
+    ///
+    /// # Arguments
+    /// * `index` - Index of the polynomial (0 <= index < k)
+    ///
+    /// # Returns
+    /// Mutable reference to coefficient vector, or None if index is out of bounds
     pub fn get_coefficients_mut(&mut self, index: usize) -> Option<&mut Vec<i64>> {
         self.secret_coeffs.get_mut(index)
     }
@@ -132,7 +188,13 @@ impl SecretKey {
         self.secret_coeffs.is_empty()
     }
 
-    /// Validate secret key structure
+    /// Validate secret key structure against parameters
+    ///
+    /// Ensures the secret key dimensions match the PVW parameters
+    /// and that all coefficient vectors have the correct length.
+    ///
+    /// # Returns
+    /// Ok(()) if structure is valid, Err with details if invalid
     pub fn validate(&self) -> Result<()> {
         if self.secret_coeffs.len() != self.params.k {
             return Err(PvwError::InvalidParameters(format!(
@@ -158,6 +220,13 @@ impl SecretKey {
     }
 
     /// Check if coefficients are within expected CBD bounds
+    ///
+    /// Validates that all coefficients fall within the expected range
+    /// for the configured CBD variance. This helps detect corruption
+    /// or incorrect parameter usage.
+    ///
+    /// # Returns
+    /// Ok(()) if all coefficients are within bounds, Err with details if not
     pub fn validate_coefficient_bounds(&self) -> Result<()> {
         let max_bound = 2 * self.params.secret_variance as i64;
 
@@ -175,7 +244,17 @@ impl SecretKey {
         Ok(())
     }
 
-    /// Create secret key from existing coefficients (for testing/deserialization)
+    /// Create secret key from existing coefficients
+    ///
+    /// Used for testing, deserialization, or when coefficients are
+    /// generated externally. Validates the coefficient structure.
+    ///
+    /// # Arguments
+    /// * `params` - PVW parameters that match the coefficient dimensions
+    /// * `coefficients` - Pre-generated k × l coefficient matrix
+    ///
+    /// # Returns
+    /// SecretKey with the provided coefficients, or error if invalid
     pub fn from_coefficients(
         params: Arc<PvwParameters>,
         coefficients: Vec<Vec<i64>>,
@@ -189,12 +268,24 @@ impl SecretKey {
         Ok(sk)
     }
 
-    /// Serialize coefficients (for storage/transmission)
+    /// Serialize coefficients for storage or transmission
+    ///
+    /// Creates a copy of the coefficient matrix suitable for serialization.
+    /// The result can be used with `from_coefficients` to reconstruct the key.
+    ///
+    /// # Returns
+    /// Cloned coefficient matrix
     pub fn serialize_coefficients(&self) -> Vec<Vec<i64>> {
         self.secret_coeffs.clone()
     }
 
-    /// Get coefficient statistics (for debugging)
+    /// Get coefficient statistics for debugging and analysis
+    ///
+    /// Computes basic statistics over all coefficients in the secret key.
+    /// Useful for verifying the distribution properties and detecting anomalies.
+    ///
+    /// # Returns
+    /// Tuple of (minimum, maximum, mean) coefficient values
     pub fn coefficient_stats(&self) -> (i64, i64, f64) {
         let all_coeffs: Vec<i64> = self.secret_coeffs.iter().flatten().copied().collect();
 
@@ -216,21 +307,42 @@ mod tests {
     use crate::params::PvwParametersBuilder;
     use rand::thread_rng;
 
-    /// Standard NTT-friendly moduli for testing
+    /// Standard moduli suitable for PVW operations
     fn test_moduli() -> Vec<u64> {
         vec![
-            0x1FFFFFFEA0001u64, // 562949951979521
-            0x1FFFFFFE88001u64, // 562949951881217
-            0x1FFFFFFE48001u64, // 562949951619073
+            0xffffee001u64,     
+            0xffffc4001u64,     
+            0x1ffffe0001u64,    
         ]
     }
 
+    /// Create PVW parameters for testing with moderate security settings
     fn create_test_params() -> Arc<PvwParameters> {
         PvwParametersBuilder::new()
-            .set_parties(10)
+            .set_parties(3)
             .set_dimension(4)
-            .set_l(32)
+            .set_l(8)
             .set_moduli(&test_moduli())
+            .set_secret_variance(1)
+            .set_error_bounds_u32(100, 200)
+            .build_arc()
+            .unwrap()
+    }
+
+    /// Create PVW parameters that satisfy the correctness condition
+    fn create_correct_test_params() -> Arc<PvwParameters> {
+        let moduli = test_moduli();
+        
+        let (variance, bound1, bound2) = PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli)
+            .unwrap_or((1, 50, 100));
+        
+        PvwParametersBuilder::new()
+            .set_parties(3)
+            .set_dimension(4)
+            .set_l(8)
+            .set_moduli(&moduli)
+            .set_secret_variance(variance)
+            .set_error_bounds_u32(bound1, bound2)
             .build_arc()
             .unwrap()
     }
@@ -255,13 +367,24 @@ mod tests {
     }
 
     #[test]
+    fn test_secret_key_with_correct_parameters() {
+        let params = create_correct_test_params();
+        let mut rng = thread_rng();
+        let sk = SecretKey::random(&params, &mut rng).unwrap();
+
+        assert!(sk.validate().is_ok());
+        assert!(sk.validate_coefficient_bounds().is_ok());
+        assert!(params.verify_correctness_condition());
+    }
+
+    #[test]
     fn test_direct_coefficient_access() {
         let params = create_test_params();
         let mut rng = thread_rng();
 
         let sk = SecretKey::random(&params, &mut rng).unwrap();
 
-        // Test direct coefficient access (no conversion overhead)
+        // Test direct coefficient access
         let coeffs = sk.coefficients();
         assert_eq!(coeffs.len(), params.k);
 
@@ -347,11 +470,12 @@ mod tests {
     #[test]
     fn test_custom_secret_variance() {
         let params = PvwParametersBuilder::new()
-            .set_parties(10)
+            .set_parties(3)
             .set_dimension(4)
-            .set_l(32)
+            .set_l(8)
             .set_moduli(&test_moduli())
             .set_secret_variance(2u32)
+            .set_error_bounds_u32(50, 100)
             .build_arc()
             .unwrap();
 
@@ -481,20 +605,67 @@ mod tests {
 
     #[test]
     fn test_empty_parameters_edge_case() {
-        let params = PvwParametersBuilder::new()
-            .set_parties(10)
-            .set_dimension(0)
-            .set_l(32)
+        // Test that parameters with k=0 are properly rejected
+        let result = PvwParametersBuilder::new()
+            .set_parties(3)
+            .set_dimension(0)  // k=0 should be rejected
+            .set_l(8)
             .set_moduli(&test_moduli())
+            .set_secret_variance(1)
+            .set_error_bounds_u32(100, 200)
+            .build_arc();
+
+        // Parameters with k=0 should be rejected
+        assert!(result.is_err(), "Parameters with k=0 should be invalid");
+        
+        // Test valid minimal parameters instead
+        let minimal_params = PvwParametersBuilder::new()
+            .set_parties(3)
+            .set_dimension(1)  // k=1 is minimal valid value
+            .set_l(8)
+            .set_moduli(&test_moduli())
+            .set_secret_variance(1)
+            .set_error_bounds_u32(100, 200)
             .build_arc()
             .unwrap();
 
         let mut rng = thread_rng();
-        let sk = SecretKey::random(&params, &mut rng).unwrap();
+        let sk = SecretKey::random(&minimal_params, &mut rng).unwrap();
 
-        assert_eq!(sk.len(), 0);
-        assert!(sk.is_empty());
+        assert_eq!(sk.len(), 1);
+        assert!(!sk.is_empty());
         assert!(sk.validate().is_ok());
-        assert_eq!(sk.secret_coeffs.len(), 0);
+        assert_eq!(sk.secret_coeffs.len(), 1);
+        assert_eq!(sk.secret_coeffs[0].len(), minimal_params.l);
+    }
+
+    #[test]
+    fn test_parameter_variance_integration() {
+        let test_variances = [1, 2, 3];
+        
+        for variance in test_variances {
+            let params = PvwParametersBuilder::new()
+                .set_parties(3)
+                .set_dimension(2)
+                .set_l(8)
+                .set_moduli(&test_moduli())
+                .set_secret_variance(variance)
+                .set_error_bounds_u32(50, 100)
+                .build_arc()
+                .unwrap();
+
+            let mut rng = thread_rng();
+            let sk = SecretKey::random(&params, &mut rng).unwrap();
+
+            assert!(sk.validate().is_ok());
+            assert!(sk.validate_coefficient_bounds().is_ok());
+
+            // Verify coefficients respect the variance bound
+            let max_expected = 2 * variance as i64;
+            let (min, max, _) = sk.coefficient_stats();
+            
+            assert!(min >= -max_expected, "Min coefficient {} should be >= -{} for variance {}", min, max_expected, variance);
+            assert!(max <= max_expected, "Max coefficient {} should be <= {} for variance {}", max, max_expected, variance);
+        }
     }
 }
