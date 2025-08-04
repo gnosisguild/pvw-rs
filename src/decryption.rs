@@ -1,12 +1,10 @@
 use crate::encryption::{pad, PvwCiphertext};
 use crate::params::{PvwError, PvwParameters, Result};
 use crate::secret_key::SecretKey;
-use crate::PvwParametersBuilder;
 use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Context, Poly, Representation};
-use fhe_traits::FheEncrypter;
 use num_bigint::BigUint;
-use num_traits::ToPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 use std::sync::Arc;
 
 /// Decrypt a PVW ciphertext to recover the plaintext
@@ -30,7 +28,7 @@ pub fn decrypt(
     for i in 0..k {
         let mut inner_product = Poly::zero(ctx, Representation::Ntt);
         let sk_vec = sk.secret_coeffs[i].clone();
-        for j in 0..l {
+        for _ in 0..l {
             // TODO: Probably not correct
             let mut sk_i_poly = Poly::from_coefficients(&sk_vec.as_slice(), ctx).map_err(|e| {
                 PvwError::InvalidParameters(format!("Failed to create sk polynomial: {}", e))
@@ -55,16 +53,28 @@ pub fn decrypt(
 
     // Decoding step 1: For i = 1, ..., l-1, let y_i := x'_{i+1} - Δx'_i mod q
     // In 0-indexed: y_i[i] := y[i+1] - Δ * y[i] for i = 0, ..., l-2
-    let mut y_i = Vec::with_capacity(l - 1);
-    println!("{:#?}", y.len());
-    for i in 0..l - 1 {
-        let delta_y_i = &delta_poly * &y[i];
-        y_i.push(&y[i + 1] - &delta_y_i);
+    let mut y_i = Vec::with_capacity(k);
+    for i in 0..k {
+        let mut temp_vec = Vec::with_capacity(l - 1);
+        // Convert polynomial to power basis for coefficient-wise operations
+        let mut y_copy = y[i].clone();
+        if y_copy.representation() != &Representation::PowerBasis {
+            y_copy.change_representation(Representation::PowerBasis);
+        }
+        let coeffs: Vec<BigUint> = Vec::from(&y_copy);
+        // TODO: RNS NEEDED HERE
+        for j in 0..l - 1 {
+            temp_vec.push((&coeffs[j + 1] - &delta * &coeffs[j]).to_i64().unwrap());
+        }
+        let poly = Poly::from_coefficients(&temp_vec, ctx).map_err(|e| {
+            PvwError::InvalidParameters(format!("Failed to create step 1 polynomial: {}", e))
+        })?;
+        y_i.push(poly);
     }
 
     // Decoding step 2: Set z := Σ_{i=1}^{l-1} Δ^{l-i-1} · y_i
     let mut z = Poly::zero(ctx, Representation::Ntt);
-    for i in 0..l - 1 {
+    for i in 0..k - 1 {
         let power = l - i - 2; // l-i-1-1 in 0-indexed
         let mut delta_power_poly = if power == 0 {
             // Δ^0 = 1
@@ -72,8 +82,16 @@ pub fn decrypt(
                 PvwError::InvalidParameters(format!("Failed to create constant polynomial: {}", e))
             })?
         } else {
-            let delta_pow = delta.pow(power as u32);
-            Poly::from_coefficients(&[delta_pow.to_i64().unwrap()], ctx).map_err(|e| {
+            // TODO: RNS NEEDED HERE
+            let delta_pow = pad(
+                vec![
+                    (delta.pow(power as u32) % BigUint::from_u64(params.moduli()[0]).unwrap())
+                        .to_i64()
+                        .unwrap(),
+                ],
+                l,
+            );
+            Poly::from_coefficients(&delta_pow, ctx).map_err(|e| {
                 PvwError::InvalidParameters(format!(
                     "Failed to create delta^{} polynomial: {}",
                     power, e
@@ -128,12 +146,9 @@ pub fn decrypt(
 
 #[cfg(test)]
 mod tests {
-    use num_traits::Zero;
-    use rand::thread_rng;
-
-    use crate::{encryption::encrypt, GlobalPublicKey, Party, PvwCrs};
-
     use super::*;
+    use crate::{encryption::encrypt, GlobalPublicKey, PvwCrs, PvwParametersBuilder};
+    use rand::thread_rng;
 
     /// Standard NTT-friendly moduli for testing
     fn test_moduli() -> Vec<u64> {
@@ -170,7 +185,7 @@ mod tests {
         // Generate keys from secret keys
         global_pk.generate_all_keys(&secret_keys, &mut rng).unwrap();
 
-        let scalars: Vec<u64> = vec![1; 32];
+        let scalars: Vec<u64> = vec![1; 5];
 
         let ct = encrypt(&params, &mut rng, &params.context, &global_pk, &scalars).unwrap();
         let pt = decrypt(&params, &sk, &params.context, &ct).unwrap();

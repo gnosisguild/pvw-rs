@@ -3,7 +3,7 @@ use crate::public_key::GlobalPublicKey;
 use fhe_math::rq::{Context, Poly, Representation};
 use fhe_util::sample_vec_cbd;
 use num_bigint::BigUint;
-use num_traits::ToPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 
@@ -23,32 +23,35 @@ pub fn encrypt<R: RngCore + CryptoRng>(
     pk: &GlobalPublicKey,
     scalars: &[u64],
 ) -> Result<PvwCiphertext> {
-    let q = &params.q_total();
+    let q = params.moduli();
     let k = params.k;
     let l = pk.params.l;
     let n = pk.params.n;
     let g = params.gadget_vector()?;
 
-    if g.len() != scalars.len() {
+    if scalars.len() != n {
         return Err(PvwError::InvalidParameters(
-            "scalars length must equal gadget dimension ℓ".into(),
+            "scalars length must equal n".into(),
         ));
     }
+
     // Encode each plaintext scalar x_i as x_i * g ∈ ℤ_q^l
     // Result is x = (x_1*g, x_2*g, ..., x_n*g) ∈ R^n_{l,q}
     let mut x_vec: Vec<BigUint> = Vec::with_capacity(l);
     // Encode this scalar: x_i * g = (x_i * g[0], x_i * g[1], ..., x_i * g[l-1])
-    for i in 0..params.n {
-        let encoded_coeff = (scalars[i] * g[i].clone()) % q;
+    for i in 0..l {
+        let mut encoded_coeff = BigUint::ZERO;
+        for j in 0..n {
+            //TODO: RNS NEEDED HERE
+            encoded_coeff += scalars[j] * g[i].clone() % BigUint::from_u64(q[0]).unwrap();
+        }
         x_vec.push(encoded_coeff);
     }
 
-    //TODO: fix this part
     let x: Vec<i64> = x_vec
         .iter()
-        .map(|x| BigUint::ZERO.to_i64().expect("BigUint didn’t fit in i64"))
+        .map(|x| x.to_i64().expect("BigUint didn’t fit in i64"))
         .collect();
-    let x = pad(x, l);
     // Create polynomial for x
     let mut x_i_poly = Poly::from_coefficients(x.as_slice(), ctx).map_err(|e| {
         PvwError::InvalidParameters(format!("Failed to create m polynomial: {}", e))
