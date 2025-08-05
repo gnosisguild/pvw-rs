@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("\tgadget_delta (Δ) = {} (~{} bits)", delta, delta.bits());
 
     // Generate and display the gadget vector
-    let gadget_vector = params.gadget_vector()?;
+    let gadget_vector = params.gadget_vector();
     println!("\tgadget_vector (g) length = {}", gadget_vector.len());
     println!("\tgadget_vector elements (first 5):");
     for (i, element) in gadget_vector.iter().take(5).enumerate() {

@@ -1,147 +1,124 @@
-use crate::encryption::{pad, PvwCiphertext};
+use crate::encryption::PvwCiphertext;
 use crate::params::{PvwError, PvwParameters, Result};
 use crate::secret_key::SecretKey;
-use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Context, Poly, Representation};
-use num_bigint::BigUint;
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_bigint::ToBigInt;
+use num_bigint::{BigInt, BigUint};
+use num_integer::Integer;
+use num_traits::ToPrimitive;
+use num_traits::Zero;
 use std::sync::Arc;
 
 /// Decrypt a PVW ciphertext to recover the plaintext
 pub fn decrypt(
     params: &PvwParameters,
-    sk: &SecretKey,
+    secret_keys: Vec<SecretKey>,
     ctx: &Arc<Context>,
     ct: &PvwCiphertext,
-) -> Result<Vec<u64>> {
+) -> Result<Vec<i64>> {
     let k = params.k;
     let l = params.l;
+    let n = params.n;
+    let q_total = BigInt::from(params.q_total());
+    let half_q = &q_total / 2;
 
-    // Compute y = c2 - (c1 * s)
-    if ct.c1.len() != k || sk.secret_coeffs.len() != k {
-        return Err(PvwError::InvalidParameters(
-            "Ciphertext and secret-key dimensions mismatch".into(),
-        ));
-    }
-
-    let mut y = Vec::with_capacity(k);
-    for i in 0..k {
+    let mut y = Vec::with_capacity(n);
+    for i in 0..n {
         let mut inner_product = Poly::zero(ctx, Representation::Ntt);
-        let sk_vec = sk.secret_coeffs[i].clone();
-        for _ in 0..l {
-            // TODO: Probably not correct
-            let mut sk_i_poly = Poly::from_coefficients(&sk_vec.as_slice(), ctx).map_err(|e| {
-                PvwError::InvalidParameters(format!("Failed to create sk polynomial: {}", e))
-            })?;
+        for j in 0..k {
+            if ct.c1.len() != k || secret_keys[j].secret_coeffs.len() != k {
+                return Err(PvwError::InvalidParameters(
+                    "Ciphertext and secret-key dimensions mismatch".into(),
+                ));
+            }
+            let mut sk_i_poly = secret_keys[j].get_polynomial(j)?;
             sk_i_poly.change_representation(Representation::Ntt);
 
-            inner_product += &(&sk_i_poly * &ct.c1[i]);
+            inner_product += &(&sk_i_poly * &ct.c1[j]);
         }
         //xg + e
         y.push(&ct.c2[i] - &inner_product.clone());
     }
 
-    // We have y = xg + e where g = (Δ^(l-1), ..., Δ, 1)
-    // This corresponds to x'_i = xΔ^(l-i) + e_i in Fig.1 notation (1-indexed)
-
-    let delta = params.delta();
-    let delta_vec = pad(vec![delta.to_i64().unwrap()], l);
-    let mut delta_poly = Poly::from_coefficients(&delta_vec, ctx).map_err(|e| {
-        PvwError::InvalidParameters(format!("Failed to create delta polynomial: {}", e))
-    })?;
-    delta_poly.change_representation(Representation::Ntt);
-
     // Decoding step 1: For i = 1, ..., l-1, let y_i := x'_{i+1} - Δx'_i mod q
     // In 0-indexed: y_i[i] := y[i+1] - Δ * y[i] for i = 0, ..., l-2
-    let mut y_i = Vec::with_capacity(k);
-    for i in 0..k {
-        let mut temp_vec = Vec::with_capacity(l - 1);
+    let mut y_i = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut polynomial_coeffs = Vec::with_capacity(l - 1);
         // Convert polynomial to power basis for coefficient-wise operations
         let mut y_copy = y[i].clone();
         if y_copy.representation() != &Representation::PowerBasis {
             y_copy.change_representation(Representation::PowerBasis);
         }
         let coeffs: Vec<BigUint> = Vec::from(&y_copy);
-        // TODO: RNS NEEDED HERE
+        let centered_coeffs: Vec<BigInt> = coeffs
+            .iter()
+            .map(|coeff| center_values(coeff, params.clone()))
+            .collect();
         for j in 0..l - 1 {
-            temp_vec.push((&coeffs[j + 1] - &delta * &coeffs[j]).to_i64().unwrap());
+            let mut coeff =
+                &centered_coeffs[j + 1] - params.delta().to_bigint().unwrap() * &centered_coeffs[j];
+            coeff = coeff.mod_floor(&q_total);
+            if coeff > half_q {
+                coeff -= &q_total;
+            }
+            polynomial_coeffs.push(coeff);
         }
-        let poly = Poly::from_coefficients(&temp_vec, ctx).map_err(|e| {
-            PvwError::InvalidParameters(format!("Failed to create step 1 polynomial: {}", e))
-        })?;
-        y_i.push(poly);
+        y_i.push(polynomial_coeffs);
     }
 
-    // Decoding step 2: Set z := Σ_{i=1}^{l-1} Δ^{l-i-1} · y_i
-    let mut z = Poly::zero(ctx, Representation::Ntt);
-    for i in 0..k - 1 {
-        let power = l - i - 2; // l-i-1-1 in 0-indexed
-        let mut delta_power_poly = if power == 0 {
-            // Δ^0 = 1
-            Poly::from_coefficients(&[1i64], ctx).map_err(|e| {
-                PvwError::InvalidParameters(format!("Failed to create constant polynomial: {}", e))
-            })?
-        } else {
-            // TODO: RNS NEEDED HERE
-            let delta_pow = pad(
-                vec![
-                    (delta.pow(power as u32) % BigUint::from_u64(params.moduli()[0]).unwrap())
-                        .to_i64()
-                        .unwrap(),
-                ],
-                l,
-            );
-            Poly::from_coefficients(&delta_pow, ctx).map_err(|e| {
-                PvwError::InvalidParameters(format!(
-                    "Failed to create delta^{} polynomial: {}",
-                    power, e
-                ))
-            })?
-        };
-        delta_power_poly.change_representation(Representation::Ntt);
+    // Decoding step 2 and 3
+    let mut e_vec = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut z = BigInt::ZERO;
+        let deltas = params.gadget_vector();
+        let y_i_coeffs = y_i[i].clone();
+        for j in 0..l - 1 {
+            let delta = center_values(&deltas[l - 2 - j], params.clone());
+            z += y_i_coeffs[j].clone() * delta;
+        }
+        println!("z {:#?}", z);
 
-        z += &(&delta_power_poly * &y_i[i]);
+        let delta_power_l_minus_1 = BigInt::from(params.delta_power_l_minus_1.clone());
+        let mut e = z.mod_floor(&delta_power_l_minus_1);
+        if e > delta_power_l_minus_1.clone() / 2 {
+            e -= &delta_power_l_minus_1;
+        }
+        e_vec.push(e);
     }
 
-    // Decoding step 3: Set e := z mod Δ^{l-1}
-    let delta_l_minus_1 = delta.pow((l - 1) as u32);
-
-    // Convert polynomial to power basis for coefficient-wise operations
-    let mut z_copy = z.clone();
-    if z_copy.representation() != &Representation::PowerBasis {
-        z_copy.change_representation(Representation::PowerBasis);
-    }
-
-    // Convert coefficients to BigUint and apply modulo reduction
-    let coeffs: Vec<BigUint> = Vec::from(&z_copy);
-    let reduced_coeffs: Vec<BigUint> = coeffs.iter().map(|c| c % &delta_l_minus_1).collect();
-
-    // Convert back to polynomial in power basis representation
-    let mut e = Poly::try_convert_from(
-        reduced_coeffs.as_slice(),
-        z_copy.ctx(),
-        false, // constant-time operations for security
-        Representation::PowerBasis,
-    )
-    .map_err(|e| {
-        PvwError::InvalidParameters(format!(
-            "Failed to convert coefficients back to polynomial: {}",
-            e
-        ))
-    })?;
-
-    // Convert back to NTT representation for further operations
-    e.change_representation(Representation::PowerBasis);
     // Decoding step 4: x'[0] - e / delta^(l-1)
-    let mut y0: Poly = y[0].clone();
-    y0.change_representation(Representation::PowerBasis);
-    let numerator: Vec<BigUint> = Vec::from(&(&y0 - &e));
+    let mut pt = Vec::with_capacity(n);
+    for i in 0..n {
+        y[i].change_representation(Representation::PowerBasis);
+        let y_i_coeffs: Vec<BigUint> = Vec::from(&y[i]);
+        let centered_y_0 = center_values(&y_i_coeffs[0], params.clone());
+        let delta_power_l_minus_1 = center_values(&params.delta_power_l_minus_1, params.clone());
 
-    let mut pt = Vec::new();
-    for i in 0..numerator.len() {
-        pt.push((&numerator[i] / &delta_l_minus_1).to_u64().unwrap());
+        let numerator = &centered_y_0 - &e_vec[i];
+        println!("{:#?}", centered_y_0);
+        println!("{:#?}", centered_y_0);
+
+        debug_assert!(
+            (&numerator % &delta_power_l_minus_1).is_zero(),
+            "plaintext‐decoding division not exact; got remainder {}",
+            (&numerator % &delta_power_l_minus_1)
+        );
+
+        pt.push((numerator / &delta_power_l_minus_1).to_i64().unwrap());
     }
     Ok(pt.clone())
+}
+
+fn center_values(coeff: &BigUint, params: PvwParameters) -> BigInt {
+    let q_total = BigInt::from(params.q_total());
+    let half_q = &q_total / 2;
+    let coeff_bigint = BigInt::from(coeff.clone());
+    if coeff_bigint > half_q {
+        &coeff_bigint - &q_total // Convert to negative
+    } else {
+        coeff_bigint
+    }
 }
 
 #[cfg(test)]
@@ -175,8 +152,13 @@ mod tests {
         let mut rng = thread_rng();
 
         // Create secret keys directly
-        let sk = SecretKey::random(&params, &mut rng).unwrap();
-        let secret_keys = vec![sk.clone()];
+        let sk1 = SecretKey::random(&params, &mut rng).unwrap();
+        let sk2 = SecretKey::random(&params, &mut rng).unwrap();
+        let sk3 = SecretKey::random(&params, &mut rng).unwrap();
+        let sk4 = SecretKey::random(&params, &mut rng).unwrap();
+        let sk5 = SecretKey::random(&params, &mut rng).unwrap();
+
+        let secret_keys = vec![sk1, sk2, sk3, sk4, sk5];
 
         // Create global public key
         let crs = PvwCrs::new(&params, &mut rng).unwrap();
@@ -185,10 +167,10 @@ mod tests {
         // Generate keys from secret keys
         global_pk.generate_all_keys(&secret_keys, &mut rng).unwrap();
 
-        let scalars: Vec<u64> = vec![1; 5];
+        let scalars: Vec<i64> = vec![1, 2, 1, 3, 1];
 
-        let ct = encrypt(&params, &mut rng, &params.context, &global_pk, &scalars).unwrap();
-        let pt = decrypt(&params, &sk, &params.context, &ct).unwrap();
+        let ct = encrypt(&params, &mut rng, &global_pk, &scalars).unwrap();
+        let pt = decrypt(&params, secret_keys, &params.context, &ct).unwrap();
 
         println!("{:#?}", pt);
     }
