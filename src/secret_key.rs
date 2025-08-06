@@ -55,9 +55,6 @@ impl SecretKey {
             secret_coeffs.push(coeffs);
         }
 
-        println!("[SECRET_KEY] Generated secret key with k={} polynomials, l={} coefficients each, variance={}", 
-                params.k, params.l, params.secret_variance);
-
         Ok(Self {
             params: params.clone(),
             secret_coeffs,
@@ -364,6 +361,8 @@ mod tests {
         for coeffs in &sk.secret_coeffs {
             assert_eq!(coeffs.len(), params.l);
         }
+        
+        println!("✓ Secret key generation test passed");
     }
 
     #[test]
@@ -375,6 +374,8 @@ mod tests {
         assert!(sk.validate().is_ok());
         assert!(sk.validate_coefficient_bounds().is_ok());
         assert!(params.verify_correctness_condition());
+        
+        println!("✓ Secret key with correct parameters test passed");
     }
 
     #[test]
@@ -404,6 +405,8 @@ mod tests {
         let first_poly_coeffs = sk.get_coefficients(0).unwrap();
         assert_eq!(first_poly_coeffs.len(), params.l);
         assert!(sk.get_coefficients(params.k).is_none());
+        
+        println!("✓ Direct coefficient access test passed");
     }
 
     #[test]
@@ -426,6 +429,8 @@ mod tests {
         let single_poly = sk.get_polynomial(0).unwrap();
         assert_eq!(*single_poly.representation(), Representation::Ntt);
         assert!(Arc::ptr_eq(&single_poly.ctx, &params.context));
+        
+        println!("✓ Polynomial conversion on-demand test passed");
     }
 
     #[test]
@@ -446,6 +451,8 @@ mod tests {
 
         // Legacy matrix should match direct coefficient access
         assert_eq!(coeff_matrix, sk.coefficients().to_vec());
+        
+        println!("✓ Backward compatibility test passed");
     }
 
     #[test]
@@ -465,6 +472,8 @@ mod tests {
         let first_poly_mut = sk.get_coefficients_mut(0).unwrap();
         first_poly_mut[0] = original_value;
         assert_eq!(sk.secret_coeffs[0][0], original_value);
+        
+        println!("✓ Mutable coefficient access test passed");
     }
 
     #[test]
@@ -496,6 +505,8 @@ mod tests {
                 );
             }
         }
+        
+        println!("✓ Custom secret variance test passed");
     }
 
     #[test]
@@ -511,6 +522,8 @@ mod tests {
         assert!(min >= -2);
         assert!(max <= 2);
         assert!(mean.abs() < 1.0); // Mean should be close to 0 for random sampling
+        
+        println!("✓ Coefficient statistics test passed - min: {}, max: {}, mean: {:.3}", min, max, mean);
     }
 
     #[test]
@@ -546,6 +559,8 @@ mod tests {
         assert_eq!(sk.secret_coeffs, test_coeffs);
         assert!(sk.validate().is_ok());
         assert!(sk.validate_coefficient_bounds().is_ok());
+        
+        println!("✓ From coefficients constructor test passed");
     }
 
     #[test]
@@ -562,6 +577,8 @@ mod tests {
         // Test round-trip
         let sk2 = SecretKey::from_coefficients(params, serialized).unwrap();
         assert_eq!(sk.secret_coeffs, sk2.secret_coeffs);
+        
+        println!("✓ Serialization test passed");
     }
 
     #[test]
@@ -586,6 +603,8 @@ mod tests {
 
         // Verify coefficients are zeroed
         assert!(sk.secret_coeffs.is_empty());
+        
+        println!("✓ Zeroize implementation test passed");
     }
 
     #[test]
@@ -601,6 +620,8 @@ mod tests {
             sk1.secret_coeffs, sk2.secret_coeffs,
             "Two randomly generated keys should be different"
         );
+        
+        println!("✓ Multiple key generation test passed");
     }
 
     #[test]
@@ -637,6 +658,8 @@ mod tests {
         assert!(sk.validate().is_ok());
         assert_eq!(sk.secret_coeffs.len(), 1);
         assert_eq!(sk.secret_coeffs[0].len(), minimal_params.l);
+        
+        println!("✓ Empty parameters edge case test passed");
     }
 
     #[test]
@@ -662,10 +685,13 @@ mod tests {
 
             // Verify coefficients respect the variance bound
             let max_expected = 2 * variance as i64;
-            let (min, max, _) = sk.coefficient_stats();
+            let (min, max, mean) = sk.coefficient_stats();
             
             assert!(min >= -max_expected, "Min coefficient {} should be >= -{} for variance {}", min, max_expected, variance);
             assert!(max <= max_expected, "Max coefficient {} should be <= {} for variance {}", max, max_expected, variance);
+            
+            println!("✓ Variance {} test passed - bounds: [{}, {}], mean: {:.3}", 
+                    variance, min, max, mean);
         }
     }
 }

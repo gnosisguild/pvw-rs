@@ -153,19 +153,17 @@ impl PvwParametersBuilder {
             ));
         }
 
-        // Create fhe.rs Context first
+        // Create fhe.rs Context
         let context = Context::new_arc(&moduli, l)
             .map_err(|e| PvwError::InvalidParameters(format!("Context creation failed: {}", e)))?;
 
-        // Compute delta = ⌊Q^(1/ℓ)⌋ following C++ implementation
+        // Compute delta = ⌊Q^(1/ℓ)⌋
         let q_total = moduli
             .iter()
             .map(|&m| BigUint::from(m))
             .fold(BigUint::one(), |acc, m| acc * m);
         
         let delta = q_total.nth_root(l as u32);
-        println!("[PVW_PARAMS] Q = {}", q_total);
-        println!("[PVW_PARAMS] Delta = Q^(1/{}) = {}", l, delta);
 
         // Compute Delta^(ℓ-1) for gadget operations
         let delta_power_l_minus_1 = if l > 1 {
@@ -173,7 +171,6 @@ impl PvwParametersBuilder {
         } else {
             BigUint::one()
         };
-        println!("[PVW_PARAMS] Delta^({}) = {}", l - 1, delta_power_l_minus_1);
 
         // Use provided parameters or defaults
         let secret_variance = self.secret_variance.unwrap_or(1u32);
@@ -192,9 +189,6 @@ impl PvwParametersBuilder {
                 "error_bound_2 must be positive".to_string()
             ));
         }
-
-        println!("[PVW_PARAMS] Using n={}, k={}, l={}, secret_variance={}", n, k, l, secret_variance);
-        println!("[PVW_PARAMS] Error bounds: bound_1={}, bound_2={}", error_bound_1, error_bound_2);
 
         Ok(PvwParameters {
             n,
@@ -303,21 +297,14 @@ impl PvwParameters {
     }
 
     /// Create PVW gadget polynomial: g(X) = 1 + Δ·X + Δ²·X² + ... + Δ^(ℓ-1)·X^(ℓ-1)
-    /// CORRECTED to match C++ implementation exactly
+    /// Returns a polynomial with coefficients [1, Δ, Δ², ..., Δ^(ℓ-1)]
     pub fn gadget_polynomial(&self) -> Result<Poly> {
-        println!("[PVW_GADGET] Creating PVW gadget polynomial with Delta = {}", self.delta);
-        
         let mut coefficients_bigint = Vec::with_capacity(self.l);
         
-        // C++ implementation: for (size_t i=0; i<ell; i++) { SetCoeff(gx, i, delta2i); delta2i *= deltaScalar; }
-        // This creates coefficients: [1, Δ, Δ², ..., Δ^(ℓ-1)] for X^0, X^1, X^2, ...
+        // Create coefficients: [1, Δ, Δ², ..., Δ^(ℓ-1)] for X^0, X^1, X^2, ...
         let mut delta_power = BigUint::one();
         for i in 0..self.l {
             coefficients_bigint.push(BigInt::from(delta_power.clone()));
-            
-            if i < 4 {
-                println!("[PVW_GADGET] g[X^{}] = Delta^{} = {}", i, i, coefficients_bigint[i]);
-            }
             
             // Compute next power for next iteration
             if i < self.l - 1 {
@@ -330,7 +317,6 @@ impl PvwParameters {
             poly.change_representation(fhe_math::rq::Representation::Ntt);
         }
         
-        println!("[PVW_GADGET] Successfully created PVW gadget polynomial");
         Ok(poly)
     }
 
@@ -342,22 +328,16 @@ impl PvwParameters {
         for i in 0..self.l {
             g.push(delta_power.clone());
             
-            if i < 4 {
-                println!("[PVW_GADGET] gadget_vector[{}] = Delta^{} = {}", i, i, delta_power);
-            }
-            
             if i < self.l - 1 {
                 delta_power *= &self.delta;
             }
         }
         
-        println!("[PVW_GADGET] Created gadget vector with {} elements", g.len());
         g
     }
 
-    /// Create gadget element g() as used in C++ encryption: g()*ptxt[i]
-    /// C++ comment: "Initialize the element g = (Delta^{ell-1},...,Delta,1)"
-    /// This is the VECTOR form used in C++ - DIFFERENT from polynomial coefficients
+    /// Create gadget element g() as vector [Δ^(ℓ-1), Δ^(ℓ-2), ..., Δ, 1]
+    /// This is used for encryption operations and is different from polynomial coefficients
     pub fn gadget_element(&self) -> Vec<BigUint> {
         let mut g = Vec::with_capacity(self.l);
         
@@ -371,13 +351,11 @@ impl PvwParameters {
             g.push(value);
         }
         
-        println!("[PVW_GADGET] Created gadget element g = (Δ^{}, Δ^{}, ..., Δ, 1)", 
-                self.l-1, self.l-2);
         g
     }
 
-    /// CORRECTED ENCODING: scalar * g(X) where g(X) = 1 + Δ·X + Δ²·X² + ...
-    /// This matches C++ encryption: ctxt2[i] += g()*ptxt[i] + e2[i]
+    /// Encode scalar using PVW gadget: scalar * g(X) where g(X) = 1 + Δ·X + Δ²·X² + ...
+    /// Returns polynomial with coefficients [scalar*1, scalar*Δ, scalar*Δ², ...]
     pub fn encode_scalar(&self, scalar: i64) -> Result<Poly> {
         // Create polynomial representation of scalar * g(X)
         let mut coefficients_bigint = Vec::with_capacity(self.l);
@@ -387,11 +365,6 @@ impl PvwParameters {
         for i in 0..self.l {
             let coeff = BigInt::from(scalar) * BigInt::from(delta_power.clone());
             coefficients_bigint.push(coeff);
-            
-            if i < 4 {
-                println!("[PVW_ENCODE] encoded[X^{}] = {} * Delta^{} = {}", 
-                        i, scalar, i, coefficients_bigint[i]);
-            }
             
             if i < self.l - 1 {
                 delta_power *= &self.delta;
@@ -403,7 +376,6 @@ impl PvwParameters {
             poly.change_representation(fhe_math::rq::Representation::Ntt);
         }
         
-        println!("[PVW_ENCODE] Encoded scalar {} as polynomial", scalar);
         Ok(poly)
     }
 
@@ -457,7 +429,7 @@ impl PvwParameters {
     }
 
     /// Convert a vector of BigInt coefficients into a Poly using proper RNS reduction
-    /// This is based on a proven implementation that properly handles multi-modulus structure
+    /// Handles multi-modulus structure with correct modular arithmetic
     pub fn bigints_to_poly(&self, bigints: &[BigInt]) -> Result<Poly> {
         if bigints.len() != self.l {
             return Err(PvwError::InvalidParameters(format!(
@@ -505,51 +477,39 @@ impl PvwParameters {
         ).map_err(|e| PvwError::InvalidParameters(format!(
             "Failed to create polynomial from RNS coefficients: {:?}", e
         )))?;
-
-        println!("[BIGINT_TO_POLY] Successfully converted {} BigInt coefficients using RNS reduction", 
-                bigints.len());
         
         Ok(poly)
     }
 
     /// Verify PVW parameter correctness including security condition
     pub fn verify_parameters(&self) -> Result<bool> {
-        println!("[VERIFY_PVW] Checking PVW parameter correctness");
-        
         // Check delta computation
         let q_total = self.q_total();
         let expected_delta = q_total.nth_root(self.l as u32);
         if self.delta != expected_delta {
-            println!("[VERIFY_PVW] ERROR: Delta mismatch");
             return Ok(false);
         }
         
         // Check gadget vector properties
         let gadget_vec = self.gadget_vector();
         if gadget_vec.len() != self.l {
-            println!("[VERIFY_PVW] ERROR: Gadget vector length mismatch");
             return Ok(false);
         }
         
         if gadget_vec[0] != BigUint::one() {
-            println!("[VERIFY_PVW] ERROR: First gadget element should be 1");
             return Ok(false);
         }
         
         // Check that last element is Delta^(ℓ-1)
         if gadget_vec[gadget_vec.len() - 1] != self.delta_power_l_minus_1 {
-            println!("[VERIFY_PVW] ERROR: Last gadget element should be Delta^(ℓ-1)");
             return Ok(false);
         }
         
-        // Check PVW correctness condition:
-        // delta_power_l_minus_1 > error_bound_1 * (24/sqrt(l^2*k*n + 31.8*k*l)) + error_bound_2 * (2.37/sqrt(n*l) + 1.7*n)
+        // Check PVW correctness condition
         if !self.verify_correctness_condition() {
-            println!("[VERIFY_PVW] ERROR: Correctness condition not satisfied");
             return Ok(false);
         }
         
-        println!("[VERIFY_PVW] All parameter checks passed");
         Ok(true)
     }
 
@@ -588,18 +548,7 @@ impl PvwParameters {
         // Convert delta_power_l_minus_1 to f64 for comparison
         let delta_power_f64 = self.delta_power_l_minus_1.to_f64().unwrap_or(0.0);
         
-        println!("[VERIFY_CORRECTNESS] n={}, k={}, l={}", self.n, self.k, self.l);
-        println!("[VERIFY_CORRECTNESS] error_bound_1={}, error_bound_2={}", self.error_bound_1, self.error_bound_2);
-        println!("[VERIFY_CORRECTNESS] Delta^(l-1) = {}", self.delta_power_l_minus_1);
-        println!("[VERIFY_CORRECTNESS] First term (error_bound_1 * 24/sqrt(l²kn + 31.8kl)) = {:.6}", first_term);
-        println!("[VERIFY_CORRECTNESS] Second term (error_bound_2 * (2.37/sqrt(nl) + 1.7n)) = {:.6}", second_term);
-        println!("[VERIFY_CORRECTNESS] Total bound = {:.6}", total_bound);
-        println!("[VERIFY_CORRECTNESS] Delta^(l-1) as f64 ≈ {:.6}", delta_power_f64);
-        
-        let condition_satisfied = delta_power_f64 > total_bound;
-        println!("[VERIFY_CORRECTNESS] Correctness condition satisfied: {}", condition_satisfied);
-        
-        condition_satisfied
+        delta_power_f64 > total_bound
     }
 
     /// Get suggested parameters that satisfy the correctness condition
@@ -621,28 +570,19 @@ impl PvwParameters {
             
         let delta_power_f64 = temp_params.delta_power_l_minus_1.to_f64().unwrap_or(0.0);
         
-        println!("[SUGGEST_PARAMS] For n={}, k={}, l={}", n, k, l);
-        println!("[SUGGEST_PARAMS] Delta^(l-1) ≈ {:.6}", delta_power_f64);
-        
-        // Try to find reasonable error bounds
+        // Calculate the coefficients
         let n_f64 = n as f64;
         let k_f64 = k as f64;
         let l_f64 = l as f64;
         
-        // Calculate the coefficients
         let coeff1 = 24.0 / (l_f64 * l_f64 * k_f64 * n_f64 + 31.8 * k_f64 * l_f64).sqrt();
         let coeff2 = 2.37 / (n_f64 * l_f64).sqrt() + 1.7 * n_f64;
-        
-        println!("[SUGGEST_PARAMS] Coefficient for error_bound_1: {:.6}", coeff1);
-        println!("[SUGGEST_PARAMS] Coefficient for error_bound_2: {:.6}", coeff2);
         
         // Start with small bounds and check if they work
         for error_bound_1 in [100, 200, 500, 1000, 2000, 5000] {
             for error_bound_2 in [100, 200, 500, 1000, 2000, 5000] {
                 let total_bound = error_bound_1 as f64 * coeff1 + error_bound_2 as f64 * coeff2;
                 if delta_power_f64 > total_bound * 2.0 { // Add safety margin
-                    println!("[SUGGEST_PARAMS] Suggested: error_bound_1={}, error_bound_2={}, secret_variance=1", 
-                            error_bound_1, error_bound_2);
                     return Ok((1, error_bound_1, error_bound_2));
                 }
             }
@@ -661,7 +601,6 @@ mod tests {
 
     #[test]
     fn test_pvw_parameters_with_custom_moduli() {
-        // Your specified moduli
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
         
         // Try different parameter combinations
@@ -677,14 +616,15 @@ mod tests {
             // Get suggested correct parameters
             match PvwParameters::suggest_correct_parameters(n, k, l, &moduli) {
                 Ok((secret_variance, error_bound_1, error_bound_2)) => {
-                    println!("Suggested parameters found!");
+                    println!("Suggested parameters found: variance={}, bound1={}, bound2={}", 
+                            secret_variance, error_bound_1, error_bound_2);
                     
                     // Create parameters with suggested bounds
                     match PvwParameters::new_with_u32_bounds(
                         n, k, l, &moduli, secret_variance, error_bound_1, error_bound_2
                     ) {
                         Ok(params) => {
-                            println!("Parameters created successfully!");
+                            println!("Parameters created successfully with Delta = {}", params.delta());
                             
                             // Verify they satisfy the correctness condition
                             match params.verify_parameters() {
@@ -703,7 +643,6 @@ mod tests {
 
     #[test] 
     fn example_usage() {
-        // Your specified moduli
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
         
         // Method 1: Using builder pattern with custom parameters
@@ -733,7 +672,7 @@ mod tests {
             3,                  // n (parties)
             64,                 // k (LWE dimension)  
             8,                  // l (redundancy parameter)
-            &moduli,            // your specified moduli
+            &moduli,            // specified moduli
             1,                  // secret_variance
             200,                // error_bound_1
             400,                // error_bound_2
@@ -774,7 +713,6 @@ mod bigint_conversion_tests {
 
     #[test]
     fn test_bigints_to_poly_basic() {
-        // Test with your specified moduli
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
         
         let params = PvwParameters::new_with_u32_bounds(
@@ -911,8 +849,7 @@ mod bigint_conversion_tests {
         let gadget_poly = params.gadget_polynomial()
             .expect("Failed to create gadget polynomial");
 
-        // Use the proper fhe.rs lift function for CRT reconstruction
-        // First, ensure we're in PowerBasis representation for lifting
+        // Ensure we're in PowerBasis representation for lifting
         let mut poly_for_lifting = gadget_poly.clone();
         poly_for_lifting.change_representation(Representation::PowerBasis);
         
@@ -925,11 +862,8 @@ mod bigint_conversion_tests {
         }
         
         // Verify gadget structure: [1, Δ, Δ², ..., Δ^(ℓ-1)]
-        // The lift should give us the correct values since our inputs were < Q
         let mut expected_delta_power = BigUint::one();
         for (i, coeff) in gadget_coeffs.iter().enumerate() {
-            // For the gadget polynomial, our input values should be < Q,
-            // so lift should recover them exactly
             assert_eq!(*coeff, expected_delta_power, 
                 "Gadget coefficient {} should be Delta^{} = {}, got {}", 
                 i, i, expected_delta_power, coeff);
@@ -938,7 +872,7 @@ mod bigint_conversion_tests {
                 expected_delta_power *= params.delta();
             }
         }
-        println!("✓ Gadget polynomial conversion test passed (using fhe.rs lift)");
+        println!("✓ Gadget polynomial conversion test passed");
     }
 
     #[test]

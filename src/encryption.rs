@@ -37,9 +37,6 @@ impl PvwCiphertext {
     /// 
     /// Ensures the ciphertext has the correct dimensions and that all
     /// polynomials use compatible fhe.rs contexts.
-    ///
-    /// # Returns
-    /// Ok(()) if structure is valid, Err with details if invalid
     pub fn validate(&self) -> Result<()> {
         if self.c1.len() != self.params.k {
             return Err(PvwError::InvalidParameters(format!(
@@ -79,12 +76,6 @@ impl PvwCiphertext {
     /// 
     /// Returns a reference to the polynomial that encrypts the value
     /// intended for the specified party.
-    ///
-    /// # Arguments
-    /// * `party_index` - Index of the party (0 <= party_index < n)
-    ///
-    /// # Returns
-    /// Reference to c2[party_index], or None if index is out of bounds
     pub fn get_party_ciphertext(&self, party_index: usize) -> Option<&Poly> {
         self.c2.get(party_index)
     }
@@ -108,14 +99,6 @@ impl PvwCiphertext {
 /// 
 /// The encryption follows: c1 = A*r + e1, c2 = B^T*r + e2 + encode(scalars)
 /// where A is the CRS, B is the global public key matrix, and r is randomness.
-///
-/// # Arguments
-/// * `scalars` - Vector of scalars to encrypt (length must equal n = number of parties)
-/// * `global_pk` - Global public key containing all party public keys
-/// * `rng` - Cryptographically secure random number generator
-///
-/// # Returns
-/// PvwCiphertext where each party can decrypt their corresponding scalar
 pub fn encrypt<R: RngCore + CryptoRng>(
     scalars: &[u64],
     global_pk: &GlobalPublicKey,
@@ -139,17 +122,15 @@ pub fn encrypt<R: RngCore + CryptoRng>(
 
     // Verify parameters satisfy correctness condition for reliable decryption
     if !params.verify_correctness_condition() {
-        println!("⚠️  Warning: Parameters may not satisfy correctness condition");
-        println!("   Decryption may fail due to excessive noise");
+        return Err(PvwError::InvalidParameters(
+            "Parameters do not satisfy correctness condition - decryption may fail".to_string()
+        ));
     }
 
-    println!("[ENCRYPT] Starting PVW encryption for {} scalars: {:?}", 
-            scalars.len(), scalars);
-
-    // STEP 1: Sample randomness vector r ∈ R_q^k using CBD
+    // Sample randomness vector r ∈ R_q^k using CBD
     // This provides the shared randomness that links c1 and c2 components
     let mut r_polys = Vec::with_capacity(params.k);
-    for i in 0..params.k {
+    for _ in 0..params.k {
         let r_coeffs = sample_vec_cbd(params.l, params.secret_variance as usize, rng)
             .map_err(|e| PvwError::SamplingError(format!("Failed to sample randomness: {}", e)))?;
         
@@ -159,11 +140,9 @@ pub fn encrypt<R: RngCore + CryptoRng>(
         r_poly.change_representation(Representation::Ntt);
         r_polys.push(r_poly);
     }
-    println!("[ENCRYPT] Generated randomness vector r with {} polynomials", r_polys.len());
 
-    // STEP 2: Compute c1 = A * r + e1
+    // Compute c1 = A * r + e1
     // The CRS multiplication provides the base security structure
-    println!("[ENCRYPT] Computing c1 = A * r + e1");
     let mut c1 = global_pk.crs.multiply_by_randomness(&r_polys)?;
     
     // Add e1 noise to each component
@@ -171,11 +150,9 @@ pub fn encrypt<R: RngCore + CryptoRng>(
         let e1_poly = params.sample_error_1(rng)?;
         c1[i] = &c1[i] + &e1_poly;
     }
-    println!("[ENCRYPT] Completed c1 computation with {} components", c1.len());
 
-    // STEP 3: Compute c2 = B^T * r + e2 + encode(scalars)
+    // Compute c2 = B^T * r + e2 + encode(scalars)
     // Each c2[i] will be decryptable by party i
-    println!("[ENCRYPT] Computing c2 = B^T * r + e2 + encoded_messages");
     let mut c2 = Vec::with_capacity(params.n);
     
     for party_idx in 0..params.n {
@@ -199,8 +176,6 @@ pub fn encrypt<R: RngCore + CryptoRng>(
         
         party_result = &party_result + &encoded_scalar + e2_poly;
         c2.push(party_result);
-        
-        println!("[ENCRYPT] Completed c2[{}] for scalar {}", party_idx, scalar);
     }
 
     let ciphertext = PvwCiphertext {
@@ -211,8 +186,6 @@ pub fn encrypt<R: RngCore + CryptoRng>(
 
     // Validate the result
     ciphertext.validate()?;
-    println!("[ENCRYPT] PVW encryption completed successfully");
-    println!("[ENCRYPT] Ciphertext: c1.len()={}, c2.len()={}", ciphertext.c1.len(), ciphertext.c2.len());
 
     Ok(ciphertext)
 }
@@ -222,15 +195,6 @@ pub fn encrypt<R: RngCore + CryptoRng>(
 /// In PVSS, each party (dealer) encrypts their secret shares such that
 /// party i receives share[i]. This creates a ciphertext where each party
 /// can decrypt exactly one component - their designated share.
-///
-/// # Arguments
-/// * `party_shares` - This party's n secret shares (one for each recipient)
-/// * `party_index` - Which party is encrypting (for logging/validation)
-/// * `global_pk` - Global public key containing all party public keys
-/// * `rng` - Cryptographically secure random number generator
-///
-/// # Returns
-/// PvwCiphertext where party i can decrypt party_shares[i]
 pub fn encrypt_party_shares<R: RngCore + CryptoRng>(
     party_shares: &[u64],     // This party's n secret shares
     party_index: usize,       // Which party is encrypting (for validation)
@@ -249,9 +213,6 @@ pub fn encrypt_party_shares<R: RngCore + CryptoRng>(
         )));
     }
 
-    println!("[ENCRYPT_SHARES] Party {} encrypting {} shares: {:?}", 
-            party_index, party_shares.len(), party_shares);
-
     // For PVSS: each party encrypts their n shares
     // This creates a ciphertext where c2[i] encrypts party_shares[i]
     encrypt(party_shares, global_pk, rng)
@@ -263,16 +224,8 @@ pub fn encrypt_party_shares<R: RngCore + CryptoRng>(
 /// encrypt their shares. The result is a set of ciphertexts where
 /// ciphertexts[dealer][recipient] allows recipient to decrypt the
 /// share that dealer intended for them.
-///
-/// # Arguments
-/// * `all_shares` - all_shares[dealer] = shares that dealer wants to distribute
-/// * `global_pk` - Global public key containing all party public keys
-/// * `rng` - Cryptographically secure random number generator
-///
-/// # Returns
-/// Vector of ciphertexts, one per dealer party
 pub fn encrypt_all_party_shares<R: RngCore + CryptoRng>(
-    all_shares: &[Vec<u64>],  // all_shares[dealer] = shares for that dealer to distribute
+    all_shares: &[Vec<u64>],  // all_shares[dealer] = shares that dealer wants to distribute
     global_pk: &GlobalPublicKey,
     rng: &mut R,
 ) -> Result<Vec<PvwCiphertext>> {
@@ -292,19 +245,13 @@ pub fn encrypt_all_party_shares<R: RngCore + CryptoRng>(
         }
     }
 
-    println!("[ENCRYPT_ALL] Encrypting shares for {} dealers", all_shares.len());
-
     let mut ciphertexts = Vec::with_capacity(global_pk.params.n);
     
     for (dealer_idx, dealer_shares) in all_shares.iter().enumerate() {
         let ct = encrypt_party_shares(dealer_shares, dealer_idx, global_pk, rng)?;
         ciphertexts.push(ct);
-        println!("[ENCRYPT_ALL] Completed encryption for dealer {}", dealer_idx);
     }
 
-    println!("[ENCRYPT_ALL] Completed encryption for all {} dealers", all_shares.len());
-    println!("[ENCRYPT_ALL] PVSS setup complete: each party can now decrypt their shares");
-    
     Ok(ciphertexts)
 }
 
@@ -312,23 +259,12 @@ pub fn encrypt_all_party_shares<R: RngCore + CryptoRng>(
 /// 
 /// Alternative encryption mode where the same value is encrypted for all parties.
 /// This can be useful for distributing public parameters or shared values.
-///
-/// # Arguments
-/// * `scalar` - The value to encrypt for all parties
-/// * `global_pk` - Global public key containing all party public keys
-/// * `rng` - Cryptographically secure random number generator
-///
-/// # Returns
-/// PvwCiphertext where all parties can decrypt the same scalar value
 pub fn encrypt_broadcast<R: RngCore + CryptoRng>(
     scalar: u64,
     global_pk: &GlobalPublicKey,
     rng: &mut R,
 ) -> Result<PvwCiphertext> {
     let broadcast_values = vec![scalar; global_pk.params.n];
-    
-    println!("[ENCRYPT_BROADCAST] Broadcasting scalar {} to {} parties", 
-            scalar, global_pk.params.n);
     
     encrypt(&broadcast_values, global_pk, rng)
 }
@@ -338,15 +274,7 @@ pub fn encrypt_broadcast<R: RngCore + CryptoRng>(
 /// This function helps verify that the encoding is working correctly
 /// by checking that the gadget polynomial has the expected structure.
 /// Used primarily for testing and debugging.
-///
-/// # Arguments
-/// * `params` - PVW parameters to test
-///
-/// # Returns
-/// Ok(()) if encoding appears correct, Err with details if issues found
 pub fn validate_encoding(params: &PvwParameters) -> Result<()> {
-    println!("[VALIDATE_ENCODING] Checking PVW encoding correctness");
-    
     // Test the gadget polynomial structure
     let gadget_poly = params.gadget_polynomial()?;
     
@@ -371,11 +299,7 @@ pub fn validate_encoding(params: &PvwParameters) -> Result<()> {
     
     // Test scalar encoding
     let test_scalar = 42i64;
-    let encoded = params.encode_scalar(test_scalar)?;
-    
-    println!("[VALIDATE_ENCODING] Gadget polynomial structure verified");
-    println!("[VALIDATE_ENCODING] Scalar encoding test passed for value {}", test_scalar);
-    println!("[VALIDATE_ENCODING] Encoding validation completed successfully");
+    let _encoded = params.encode_scalar(test_scalar)?;
     
     Ok(())
 }

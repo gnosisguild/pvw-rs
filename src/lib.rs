@@ -12,3 +12,5 @@ pub mod normal;
 pub mod params;
 pub mod public_key;
 pub mod secret_key;
+pub mod encryption;
+pub mod decryption;

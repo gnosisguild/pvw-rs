@@ -1,10 +1,9 @@
-//! Simple n-Party Vector Encryption/Decryption Example
+//! Multi-Party Vector Encryption Example
 //! 
-//! This example demonstrates:
-//! 1. n parties, each with their own vector of values
-//! 2. Use encrypt_all_party_shares() to encrypt all vectors
-//! 3. Each party decrypts the values intended for them
-//! 4. Clean verification of the encrypt/decrypt cycle
+//! Demonstrates PVW encryption system where:
+//! 1. Multiple parties each encrypt their own vector of values
+//! 2. Each party can decrypt only the values intended for them
+//! 3. Privacy is preserved: parties only see their designated shares
 
 use std::error::Error;
 use console::style;
@@ -21,44 +20,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("{}", style("=== Multi-Party Vector Encryption Demo ===").cyan().bold());
     println!();
 
-    // Setup parameters
+    // Configuration
     let num_parties = 4;
+    let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
     
-    println!("📋 {}", style("Setup:").blue().bold());
-    println!("  • Number of parties: {}", num_parties);
-    println!("  • Each party has a vector of {} values", num_parties);
-    println!();
-
-    // Build PVW parameters with your specified moduli
-    let moduli = vec![
-        0xffffee001u64,     // Your first modulus
-        0xffffc4001u64,     // Your second modulus  
-        0x1ffffe0001u64,    // Your third modulus
-    ];
-
-    println!("🔧 {}", style("Using Custom Moduli:").blue().bold());
-    for (i, &modulus) in moduli.iter().enumerate() {
-        println!("  • Modulus {}: 0x{:x} ({} bits)", i, modulus, (modulus as f64).log2().ceil() as u32);
-    }
-    println!();
-
-    // First, get suggested parameters that satisfy correctness condition
+    // Get parameters that satisfy correctness condition
     let (suggested_variance, suggested_bound1, suggested_bound2) = 
-        match PvwParameters::suggest_correct_parameters(num_parties, 4, 8, &moduli) {
-            Ok(params) => {
-                println!("🎯 {}", style("Suggested Parameters:").green().bold());
-                println!("  • Secret variance: {}", params.0);
-                println!("  • Error bound 1: {}", params.1);
-                println!("  • Error bound 2: {}", params.2);
-                params
-            }
-            Err(_) => {
-                println!("⚠️  {}", style("Using default parameters (may not satisfy correctness condition)").yellow().bold());
-                (1, 50, 100) // Conservative defaults
-            }
-        };
-    println!();
+        PvwParameters::suggest_correct_parameters(num_parties, 4, 8, &moduli)
+            .unwrap_or((1, 50, 100));
 
+    // Build PVW parameters
     let params = PvwParametersBuilder::new()
         .set_parties(num_parties)
         .set_dimension(4)
@@ -68,22 +39,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         .set_error_bounds_u32(suggested_bound1, suggested_bound2)
         .build_arc()?;
 
+    // Display parameters
     println!("⚙️  {}", style("PVW Parameters:").blue().bold());
-    println!("  • Delta (Δ): {}", params.delta());
-    println!("  • Modulus bits: {}", params.q_total().bits());
-    
-    // Check correctness condition
-    if params.verify_correctness_condition() {
-        println!("  ✓ Correctness condition satisfied");
-    } else {
-        println!("  ⚠ Correctness condition NOT satisfied - may need larger delta or smaller error bounds");
-    }
+    println!("  • Parties: {}, Dimension: {}, Ring degree: {}", params.n, 4, params.l);
+    println!("  • Delta (Δ): {}, Modulus bits: {}", params.delta(), params.q_total().bits());
+    println!("  • Error bounds: ({}, {}), Secret variance: {}", suggested_bound1, suggested_bound2, suggested_variance);
+    println!("  • Correctness condition: {}", if params.verify_correctness_condition() { "✓ Satisfied" } else { "✗ Not satisfied" });
     println!();
 
     let mut rng = OsRng;
 
-    // Generate parties and global public key
-    println!("👥 {}", style("Generating Parties:").blue().bold());
+    // Generate parties and global public key 
     let crs = PvwCrs::new(&params, &mut rng)?;
     let mut global_pk = GlobalPublicKey::new(crs);
 
@@ -92,39 +58,30 @@ fn main() -> Result<(), Box<dyn Error>> {
         let party = Party::new(i, &params, &mut rng)?;
         global_pk.generate_and_add_party(&party, &mut rng)?;
         parties.push(party);
-        println!("  ✓ Party {} created", i);
     }
-    println!();
 
-    // Each party creates their vector of values
-    println!("📊 {}", style("Party Vectors:").blue().bold());
+    // Each party creates their vector of values to distribute
     let mut all_party_vectors = Vec::new();
-    
     for party_id in 0..num_parties {
-        // Each party creates a vector of values
-        // Party i has values: [i*10+1, i*10+2, i*10+3, i*10+4]
         let party_vector: Vec<u64> = (1..=num_parties)
             .map(|j| (party_id * 10 + j) as u64)
             .collect();
-        
-        println!("  Party {}: {:?}", party_id, party_vector);
         all_party_vectors.push(party_vector);
     }
-    println!();
 
-    // Show what we're encrypting in a nice table
-    println!("📋 {}", style("Encryption Matrix:").blue().bold());
-    println!("    Each row represents one party's vector to be encrypted");
+    // Display the values being encrypted
+    println!("📊 {}", style("Share Distribution Matrix (what each dealer encrypts):").blue().bold());
+    println!("    Rows = Dealers, Columns = Values for each recipient");
     println!();
-    print!("Party ");
+    print!("Dealer ");
     for i in 0..num_parties {
-        print!("{:>8}", format!("Val{}", i));
+        print!("{:>8}", format!("→P{}", i));
     }
     println!();
-    println!("{}", "-".repeat(6 + num_parties * 8));
+    println!("{}", "-".repeat(7 + num_parties * 8));
     
-    for (party_id, vector) in all_party_vectors.iter().enumerate() {
-        print!("{:>5} ", party_id);
+    for (dealer_id, vector) in all_party_vectors.iter().enumerate() {
+        print!("{:>6} ", dealer_id);
         for &value in vector {
             print!("{:>8}", value);
         }
@@ -132,154 +89,103 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     println!();
 
-    // Encrypt all party vectors using encrypt_all_party_shares
-    println!("🔒 {}", style("Encrypting All Vectors:").blue().bold());
+    // Encrypt all party vectors (creates n ciphertexts, one per dealer)
     let start_time = std::time::Instant::now();
-    
-    let encrypted_vectors = encryption::encrypt_all_party_shares(&all_party_vectors, &global_pk, &mut rng)?;
-    
+    let all_ciphertexts = encryption::encrypt_all_party_shares(&all_party_vectors, &global_pk, &mut rng)?;
     let encryption_time = start_time.elapsed();
-    println!("  ✓ Encrypted {} vectors in {:?}", num_parties, encryption_time);
-    println!("  ✓ Generated {} ciphertexts", encrypted_vectors.len());
-    println!();
 
-    // Each party decrypts their values from all vectors
-    println!("🔓 {}", style("Decryption Results:").blue().bold());
-    println!("    Each party decrypts position [party_id] from each encrypted vector");
-    println!();
-
-    let mut decryption_results = Vec::new();
+    // Decrypt shares using the new efficient function
+    let start_decrypt = std::time::Instant::now();
+    let mut decryption_results: Vec<Vec<u64>> = Vec::new();
     let mut total_correct = 0;
-    let mut total_decryptions = 0;
+    let mut total_values = 0;
 
     for recipient_party in 0..num_parties {
-        println!("  📤 {}", style(format!("Party {} decrypting:", recipient_party)).green().bold());
+        // Use the new function to decrypt all shares intended for this party
+        let party_shares = decryption::decrypt_party_shares(&all_ciphertexts, &parties[recipient_party].secret_key, recipient_party)?;
         
-        let mut party_results = Vec::new();
-        
-        for sender_party in 0..num_parties {
-            let start_decrypt = std::time::Instant::now();
-            
-            // Party 'recipient_party' decrypts position 'recipient_party' from sender's encrypted vector
-            let decrypted_value = decryption::decrypt_party_value(
-                &encrypted_vectors[sender_party],
-                parties[recipient_party].secret_key(),
-                recipient_party
-            )?;
-            
-            let decrypt_time = start_decrypt.elapsed();
-            let expected_value = all_party_vectors[sender_party][recipient_party];
-            let success = decrypted_value == expected_value;
-            
-            if success {
+        // Verify correctness
+        for (dealer_idx, &decrypted_value) in party_shares.iter().enumerate() {
+            let expected_value = all_party_vectors[dealer_idx][recipient_party];
+            if decrypted_value == expected_value {
                 total_correct += 1;
             }
-            total_decryptions += 1;
-            
-            println!("    From Party {}: {} → {} {} ({:?})", 
-                sender_party, 
-                expected_value, 
-                decrypted_value,
-                if success { "✓" } else { "✗" },
-                decrypt_time
-            );
-            
-            party_results.push((expected_value, decrypted_value, success));
+            total_values += 1;
         }
         
-        decryption_results.push(party_results);
-        println!();
+        decryption_results.push(party_shares);
     }
+    let decryption_time = start_decrypt.elapsed();
 
-    // Summary statistics
-    println!("📈 {}", style("Results Summary:").blue().bold());
-    let success_rate = (total_correct as f64 / total_decryptions as f64) * 100.0;
-    
-    println!("  🎯 Overall: {}/{} decryptions successful ({:.1}%)", 
-        total_correct, total_decryptions, success_rate);
-    
-    // Per-party success rates
-    for (party_id, results) in decryption_results.iter().enumerate() {
-        let party_correct = results.iter().filter(|(_, _, success)| *success).count();
-        let party_rate = (party_correct as f64 / results.len() as f64) * 100.0;
-        
-        println!("  📊 Party {}: {}/{} successful ({:.1}%)", 
-            party_id, party_correct, results.len(), party_rate);
-    }
-    println!();
-
-    // Show the final decrypted matrix
-    println!("📊 {}", style("Decrypted Values Matrix:").blue().bold());
-    println!("    Rows = Recipients, Columns = Values from each sender's vector");
+    // Display received shares matrix
+    println!("📊 {}", style("Received Shares Matrix (what each party decrypted):").blue().bold());
+    println!("    Rows = Recipients, Columns = Shares from each dealer");
     println!();
     print!("Recip ");
     for i in 0..num_parties {
-        print!("{:>12}", format!("From Party{}", i));
+        print!("{:>8}", format!("←D{}", i));
     }
     println!();
-    println!("{}", "-".repeat(6 + num_parties * 12));
+    println!("{}", "-".repeat(6 + num_parties * 8));
     
-    for (recipient_id, results) in decryption_results.iter().enumerate() {
+    for (recipient_id, shares) in decryption_results.iter().enumerate() {
         print!("{:>5} ", recipient_id);
-        for (expected, decrypted, success) in results {
-            let display = if *success {
-                format!("{}", decrypted)
-            } else {
-                format!("{}≠{}", decrypted, expected)
-            };
-            print!("{:>12}", display);
+        for &share in shares {
+            print!("{:>8}", share);
         }
         println!();
     }
     println!();
 
-    // Performance metrics
-    println!("⚡ {}", style("Performance Metrics:").blue().bold());
-    println!("  • Total vectors encrypted: {}", num_parties);
-    println!("  • Total values decrypted: {}", total_decryptions);
-    println!("  • Average encryption time: {:?}", encryption_time / num_parties as u32);
-    println!("  • Memory efficiency: Using fhe.rs polynomial operations");
-    println!("  • Quantum resistance: Lattice-based cryptography");
+    // Verify the shares match the original distribution
+    println!("🔍 {}", style("Verification:").blue().bold());
+    let mut verification_details = Vec::new();
+    for recipient_party in 0..num_parties {
+        for dealer_party in 0..num_parties {
+            let expected = all_party_vectors[dealer_party][recipient_party];
+            let received = decryption_results[recipient_party][dealer_party];
+            let matches = expected == received;
+            verification_details.push((dealer_party, recipient_party, expected, received, matches));
+        }
+    }
+
+    // Show any mismatches
+    let mismatches: Vec<_> = verification_details.iter()
+        .filter(|(_, _, _, _, matches)| !matches)
+        .collect();
+
+    if !mismatches.is_empty() {
+        println!("  Mismatches found:");
+        for (dealer, recipient, expected, received, _) in mismatches {
+            println!("    D{} → P{}: expected {}, got {}", dealer, recipient, expected, received);
+        }
+    } else {
+        println!("  ✓ All shares correctly transmitted and decrypted!");
+    }
+
+    // Results summary
+    let success_rate = (total_correct as f64 / total_values as f64) * 100.0;
+    println!("📈 {}", style("Results Summary:").blue().bold());
+    println!("  • Success rate: {}/{} ({:.1}%)", total_correct, total_values, success_rate);
+    println!("  • Operations: {} encrypt calls, {} decrypt calls", num_parties, num_parties);
     println!();
 
-    // Moduli analysis
-    println!("🔍 {}", style("Custom Moduli Analysis:").blue().bold());
-    let q_total = params.q_total();
-    println!("  • Total modulus Q: {} ({} bits)", q_total, q_total.bits());
-    println!("  • Q^(1/l): {} (Delta)", params.delta());
-    println!("  • Delta^(l-1): {}", params.delta_power_l_minus_1());
-    
-    let moduli_product: u128 = moduli.iter().map(|&m| m as u128).product();
-    println!("  • Moduli product: 0x{:x}", moduli_product);
-    println!("  • Security level: ~{} bits (estimated)", (q_total.bits() as f64 / 2.0) as u32);
+    // Performance metrics
+    println!("⚡ {}", style("Performance:").blue().bold());
+    println!("  • Encryption time: {:?} ({:?} avg per dealer)", encryption_time, encryption_time / num_parties as u32);
+    println!("  • Decryption time: {:?} ({:?} avg per party)", decryption_time, decryption_time / num_parties as u32);
+    println!("  • Efficiency: {} individual decrypt operations in {} function calls", total_values, num_parties);
     println!();
 
     // Final status
     if success_rate >= 95.0 {
-        println!("🎉 {}", style("SUCCESS: Multi-party vector encryption working perfectly!").green().bold());
-        println!("   ✓ All party vectors encrypted successfully");
-        println!("   ✓ All intended recipients can decrypt their values");
-        println!("   ✓ Privacy preserved: each party only sees their own values");
-        println!("   ✓ Custom moduli configuration working correctly");
+        println!("🎉 {}", style("SUCCESS: PVSS working perfectly!").green().bold());
+        println!("    Each party received exactly the shares intended for them.");
     } else if success_rate >= 80.0 {
-        println!("✅ {}", style("MOSTLY SUCCESSFUL: Minor noise effects detected").yellow().bold());
-        println!("   ✓ Core functionality working");
-        println!("   ⚠ Some values affected by encryption noise");
-        println!("   💡 Consider: Larger delta, smaller error bounds, or different moduli");
+        println!("✅ {}", style("MOSTLY SUCCESSFUL: Minor decryption issues detected").yellow().bold());
     } else {
-        println!("⚠️  {}", style("NEEDS ATTENTION: Lower than expected success rate").red().bold());
-        println!("   • Check correctness condition: Delta^(l-1) > noise bound");
-        println!("   • Try increasing moduli size or adjusting error bounds");
-        println!("   • Verify parameter compatibility with your moduli");
+        println!("⚠️  {}", style("NEEDS ATTENTION: Low success rate").red().bold());
     }
-    
-    println!();
-    println!("🚀 {}", style("Ready for multi-party applications!").cyan().bold());
-    println!("   • Secure multi-party computation setup");
-    println!("   • Distributed secret sharing");
-    println!("   • Privacy-preserving data exchange");
-    println!("   • Custom moduli: [0x{:x}, 0x{:x}, 0x{:x}]", 
-             moduli[0], moduli[1], moduli[2]);
 
     Ok(())
 }
