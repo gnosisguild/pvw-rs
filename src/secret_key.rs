@@ -6,7 +6,7 @@ use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// PVW Secret Key using coefficient representation
-/// 
+///
 /// Stores secret key coefficients directly from CBD sampling for efficiency.
 /// Polynomials are created on-demand for cryptographic operations.
 #[derive(Debug, Clone)]
@@ -30,9 +30,9 @@ impl ZeroizeOnDrop for SecretKey {}
 
 impl SecretKey {
     /// Generate random secret key using CBD distribution
-    /// 
+    ///
     /// Uses the variance specified in the PVW parameters to sample coefficients
-    /// from a centered binomial distribution. Stores coefficients directly 
+    /// from a centered binomial distribution. Stores coefficients directly
     /// to avoid conversion overhead during frequent operations.
     ///
     /// # Arguments
@@ -62,7 +62,7 @@ impl SecretKey {
     }
 
     /// Convert coefficients to polynomials when needed for crypto operations
-    /// 
+    ///
     /// Creates polynomials in NTT form for efficient ring operations.
     /// This is done on-demand to avoid storing redundant representations.
     ///
@@ -113,7 +113,7 @@ impl SecretKey {
     }
 
     /// Direct access to coefficient matrix
-    /// 
+    ///
     /// Provides access to the raw coefficient representation without
     /// polynomial conversion overhead. Useful for operations that work
     /// directly with coefficient vectors.
@@ -306,11 +306,7 @@ mod tests {
 
     /// Standard moduli suitable for PVW operations
     fn test_moduli() -> Vec<u64> {
-        vec![
-            0xffffee001u64,     
-            0xffffc4001u64,     
-            0x1ffffe0001u64,    
-        ]
+        vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64]
     }
 
     /// Create PVW parameters for testing with moderate security settings
@@ -329,10 +325,10 @@ mod tests {
     /// Create PVW parameters that satisfy the correctness condition
     fn create_correct_test_params() -> Arc<PvwParameters> {
         let moduli = test_moduli();
-        
-        let (variance, bound1, bound2) = PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli)
-            .unwrap_or((1, 50, 100));
-        
+
+        let (variance, bound1, bound2) =
+            PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli).unwrap_or((1, 50, 100));
+
         PvwParametersBuilder::new()
             .set_parties(3)
             .set_dimension(4)
@@ -361,7 +357,7 @@ mod tests {
         for coeffs in &sk.secret_coeffs {
             assert_eq!(coeffs.len(), params.l);
         }
-        
+
         println!("✓ Secret key generation test passed");
     }
 
@@ -374,7 +370,7 @@ mod tests {
         assert!(sk.validate().is_ok());
         assert!(sk.validate_coefficient_bounds().is_ok());
         assert!(params.verify_correctness_condition());
-        
+
         println!("✓ Secret key with correct parameters test passed");
     }
 
@@ -405,7 +401,7 @@ mod tests {
         let first_poly_coeffs = sk.get_coefficients(0).unwrap();
         assert_eq!(first_poly_coeffs.len(), params.l);
         assert!(sk.get_coefficients(params.k).is_none());
-        
+
         println!("✓ Direct coefficient access test passed");
     }
 
@@ -429,7 +425,7 @@ mod tests {
         let single_poly = sk.get_polynomial(0).unwrap();
         assert_eq!(*single_poly.representation(), Representation::Ntt);
         assert!(Arc::ptr_eq(&single_poly.ctx, &params.context));
-        
+
         println!("✓ Polynomial conversion on-demand test passed");
     }
 
@@ -451,7 +447,7 @@ mod tests {
 
         // Legacy matrix should match direct coefficient access
         assert_eq!(coeff_matrix, sk.coefficients().to_vec());
-        
+
         println!("✓ Backward compatibility test passed");
     }
 
@@ -472,7 +468,7 @@ mod tests {
         let first_poly_mut = sk.get_coefficients_mut(0).unwrap();
         first_poly_mut[0] = original_value;
         assert_eq!(sk.secret_coeffs[0][0], original_value);
-        
+
         println!("✓ Mutable coefficient access test passed");
     }
 
@@ -505,7 +501,7 @@ mod tests {
                 );
             }
         }
-        
+
         println!("✓ Custom secret variance test passed");
     }
 
@@ -522,8 +518,11 @@ mod tests {
         assert!(min >= -2);
         assert!(max <= 2);
         assert!(mean.abs() < 1.0); // Mean should be close to 0 for random sampling
-        
-        println!("✓ Coefficient statistics test passed - min: {}, max: {}, mean: {:.3}", min, max, mean);
+
+        println!(
+            "✓ Coefficient statistics test passed - min: {}, max: {}, mean: {:.3}",
+            min, max, mean
+        );
     }
 
     #[test]
@@ -559,7 +558,7 @@ mod tests {
         assert_eq!(sk.secret_coeffs, test_coeffs);
         assert!(sk.validate().is_ok());
         assert!(sk.validate_coefficient_bounds().is_ok());
-        
+
         println!("✓ From coefficients constructor test passed");
     }
 
@@ -577,7 +576,7 @@ mod tests {
         // Test round-trip
         let sk2 = SecretKey::from_coefficients(params, serialized).unwrap();
         assert_eq!(sk.secret_coeffs, sk2.secret_coeffs);
-        
+
         println!("✓ Serialization test passed");
     }
 
@@ -603,7 +602,7 @@ mod tests {
 
         // Verify coefficients are zeroed
         assert!(sk.secret_coeffs.is_empty());
-        
+
         println!("✓ Zeroize implementation test passed");
     }
 
@@ -620,7 +619,7 @@ mod tests {
             sk1.secret_coeffs, sk2.secret_coeffs,
             "Two randomly generated keys should be different"
         );
-        
+
         println!("✓ Multiple key generation test passed");
     }
 
@@ -629,7 +628,7 @@ mod tests {
         // Test that parameters with k=0 are properly rejected
         let result = PvwParametersBuilder::new()
             .set_parties(3)
-            .set_dimension(0)  // k=0 should be rejected
+            .set_dimension(0) // k=0 should be rejected
             .set_l(8)
             .set_moduli(&test_moduli())
             .set_secret_variance(1)
@@ -638,11 +637,11 @@ mod tests {
 
         // Parameters with k=0 should be rejected
         assert!(result.is_err(), "Parameters with k=0 should be invalid");
-        
+
         // Test valid minimal parameters instead
         let minimal_params = PvwParametersBuilder::new()
             .set_parties(3)
-            .set_dimension(1)  // k=1 is minimal valid value
+            .set_dimension(1) // k=1 is minimal valid value
             .set_l(8)
             .set_moduli(&test_moduli())
             .set_secret_variance(1)
@@ -658,14 +657,14 @@ mod tests {
         assert!(sk.validate().is_ok());
         assert_eq!(sk.secret_coeffs.len(), 1);
         assert_eq!(sk.secret_coeffs[0].len(), minimal_params.l);
-        
+
         println!("✓ Empty parameters edge case test passed");
     }
 
     #[test]
     fn test_parameter_variance_integration() {
         let test_variances = [1, 2, 3];
-        
+
         for variance in test_variances {
             let params = PvwParametersBuilder::new()
                 .set_parties(3)
@@ -686,12 +685,26 @@ mod tests {
             // Verify coefficients respect the variance bound
             let max_expected = 2 * variance as i64;
             let (min, max, mean) = sk.coefficient_stats();
-            
-            assert!(min >= -max_expected, "Min coefficient {} should be >= -{} for variance {}", min, max_expected, variance);
-            assert!(max <= max_expected, "Max coefficient {} should be <= {} for variance {}", max, max_expected, variance);
-            
-            println!("✓ Variance {} test passed - bounds: [{}, {}], mean: {:.3}", 
-                    variance, min, max, mean);
+
+            assert!(
+                min >= -max_expected,
+                "Min coefficient {} should be >= -{} for variance {}",
+                min,
+                max_expected,
+                variance
+            );
+            assert!(
+                max <= max_expected,
+                "Max coefficient {} should be <= {} for variance {}",
+                max,
+                max_expected,
+                variance
+            );
+
+            println!(
+                "✓ Variance {} test passed - bounds: [{}, {}], mean: {:.3}",
+                variance, min, max, mean
+            );
         }
     }
 }

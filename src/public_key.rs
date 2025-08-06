@@ -7,7 +7,7 @@ use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 
 /// Individual party in the PVSS protocol
-/// 
+///
 /// Each party manages their own secret key and has a unique index.
 /// Parties generate public keys using the common reference string
 /// and participate in the multi-party encryption protocol.
@@ -20,7 +20,7 @@ pub struct Party {
 }
 
 /// Individual public key for a single party
-/// 
+///
 /// Stores the result of b_i = s_i * A + e_i computation where s_i is the secret key,
 /// A is the CRS matrix, and e_i is the error vector. Polynomials are kept in RNS form
 /// for efficient cryptographic operations.
@@ -33,7 +33,7 @@ pub struct PublicKey {
 }
 
 /// Global public key containing all parties' public keys
-/// 
+///
 /// Maintains an n × k matrix where each element is a polynomial in RNS form.
 /// This matrix B is used for encryption operations where each row corresponds
 /// to one party's public key.
@@ -99,7 +99,7 @@ impl Party {
 
 impl PublicKey {
     /// Generate a public key for a given secret key
-    /// 
+    ///
     /// Implements the PVW public key generation: b_i = s_i * A + e_i
     /// where s_i is the secret key, A is the CRS matrix, and e_i is sampled error.
     /// All polynomials are maintained in RNS form for efficiency.
@@ -171,7 +171,8 @@ impl PublicKey {
         for (i, poly) in self.key_polynomials.iter().enumerate() {
             if !Arc::ptr_eq(&poly.ctx, &self.params.context) {
                 return Err(PvwError::InvalidParameters(format!(
-                    "Public key polynomial {} context mismatch", i
+                    "Public key polynomial {} context mismatch",
+                    i
                 )));
             }
         }
@@ -400,7 +401,9 @@ impl GlobalPublicKey {
             if let Some(poly) = self.get_polynomial(party_index, j) {
                 polys.push(poly.clone());
             } else {
-                return Err(PvwError::InvalidParameters("Matrix access failed".to_string()));
+                return Err(PvwError::InvalidParameters(
+                    "Matrix access failed".to_string(),
+                ));
             }
         }
 
@@ -416,11 +419,7 @@ mod tests {
 
     /// Standard moduli suitable for PVW operations
     fn test_moduli() -> Vec<u64> {
-        vec![
-            0xffffee001u64,     
-            0xffffc4001u64,     
-            0x1ffffe0001u64,    
-        ]
+        vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64]
     }
 
     /// Create PVW parameters for testing with moderate security settings
@@ -439,10 +438,10 @@ mod tests {
     /// Create PVW parameters that satisfy the correctness condition
     fn create_correct_test_params() -> Arc<PvwParameters> {
         let moduli = test_moduli();
-        
-        let (variance, bound1, bound2) = PvwParameters::suggest_correct_parameters(5, 4, 8, &moduli)
-            .unwrap_or((1, 50, 100));
-        
+
+        let (variance, bound1, bound2) =
+            PvwParameters::suggest_correct_parameters(5, 4, 8, &moduli).unwrap_or((1, 50, 100));
+
         PvwParametersBuilder::new()
             .set_parties(5)
             .set_dimension(4)
@@ -525,8 +524,12 @@ mod tests {
         let mut global_pk = GlobalPublicKey::new(crs);
 
         // Generate and add public keys
-        global_pk.generate_and_add_party(&party_0, &mut rng).unwrap();
-        global_pk.generate_and_add_party(&party_1, &mut rng).unwrap();
+        global_pk
+            .generate_and_add_party(&party_0, &mut rng)
+            .unwrap();
+        global_pk
+            .generate_and_add_party(&party_1, &mut rng)
+            .unwrap();
 
         assert_eq!(global_pk.num_public_keys(), 2);
 
@@ -557,7 +560,9 @@ mod tests {
         let mut global_pk = GlobalPublicKey::new(crs);
 
         // Generate all keys at once
-        global_pk.generate_all_party_keys(&parties, &mut rng).unwrap();
+        global_pk
+            .generate_all_party_keys(&parties, &mut rng)
+            .unwrap();
 
         assert_eq!(global_pk.num_public_keys(), 3);
         assert!(!global_pk.is_full()); // 3 out of 5 parties

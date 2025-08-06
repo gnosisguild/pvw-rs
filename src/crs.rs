@@ -67,7 +67,7 @@ impl PvwCrs {
     }
 
     /// Generate CRS deterministically from a string tag
-    /// 
+    ///
     /// Creates a deterministic CRS that all parties can derive from a known string.
     /// Useful for PVSS where all participants need the same reference string.
     pub fn new_from_tag(params: &Arc<PvwParameters>, tag: &str) -> Result<Self> {
@@ -131,7 +131,7 @@ impl PvwCrs {
     }
 
     /// Matrix-vector multiplication: A * secret_key
-    /// 
+    ///
     /// Computes the product of the CRS matrix with a secret key vector.
     /// Used in PVW public key generation: pk = sk * A + noise.
     pub fn multiply_by_secret_key(
@@ -169,7 +169,7 @@ impl PvwCrs {
     }
 
     /// Matrix-vector multiplication: A * randomness_vector
-    /// 
+    ///
     /// Computes the product of the CRS matrix with a randomness vector.
     /// Used in PVW encryption: c1 = A * r + e1.
     pub fn multiply_by_randomness(&self, randomness: &[Poly]) -> Result<Vec<Poly>> {
@@ -255,11 +255,7 @@ mod tests {
 
     /// Standard moduli suitable for PVW operations
     fn test_moduli() -> Vec<u64> {
-        vec![
-            0xffffee001u64,     
-            0xffffc4001u64,     
-            0x1ffffe0001u64,    
-        ]
+        vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64]
     }
 
     /// Create PVW parameters for testing with moderate security settings
@@ -278,10 +274,10 @@ mod tests {
     /// Create PVW parameters that satisfy the correctness condition
     fn create_correct_test_params() -> Arc<PvwParameters> {
         let moduli = test_moduli();
-        
-        let (variance, bound1, bound2) = PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli)
-            .unwrap_or((1, 50, 100));
-        
+
+        let (variance, bound1, bound2) =
+            PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli).unwrap_or((1, 50, 100));
+
         PvwParametersBuilder::new()
             .set_parties(3)
             .set_dimension(4)
@@ -450,11 +446,7 @@ mod tests {
 
     #[test]
     fn test_different_parameter_sizes() {
-        let test_cases = vec![
-            (1, 8),
-            (2, 8),
-            (4, 16),
-        ];
+        let test_cases = vec![(1, 8), (2, 8), (4, 16)];
 
         let mut rng = thread_rng();
 
@@ -479,9 +471,11 @@ mod tests {
     #[test]
     fn test_correctness_condition_integration() {
         let moduli = test_moduli();
-        
+
         // Test with parameters that satisfy correctness condition
-        if let Ok((variance, bound1, bound2)) = PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli) {
+        if let Ok((variance, bound1, bound2)) =
+            PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli)
+        {
             let good_params = PvwParametersBuilder::new()
                 .set_parties(3)
                 .set_dimension(4)
