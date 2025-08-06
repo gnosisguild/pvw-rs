@@ -7,7 +7,7 @@ use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 
 /// Individual party in the PVSS protocol
-/// 
+///
 /// Each party manages their own secret key and has a unique index.
 /// Parties generate public keys using the common reference string
 /// and participate in the multi-party encryption protocol.
@@ -20,7 +20,7 @@ pub struct Party {
 }
 
 /// Individual public key for a single party
-/// 
+///
 /// Stores the result of b_i = s_i * A + e_i computation where s_i is the secret key,
 /// A is the CRS matrix, and e_i is the error vector. Polynomials are kept in RNS form
 /// for efficient cryptographic operations.
@@ -33,7 +33,7 @@ pub struct PublicKey {
 }
 
 /// Global public key containing all parties' public keys
-/// 
+///
 /// Maintains an n × k matrix where each element is a polynomial in RNS form.
 /// This matrix B is used for encryption operations where each row corresponds
 /// to one party's public key.
@@ -55,14 +55,6 @@ impl Party {
     /// Validates that the party index is within the valid range [0, n).
     /// The secret key is generated using the CBD distribution with the
     /// variance specified in the parameters.
-    ///
-    /// # Arguments
-    /// * `index` - Unique party identifier (0 <= index < n)
-    /// * `params` - PVW parameters specifying system configuration
-    /// * `rng` - Cryptographically secure random number generator
-    ///
-    /// # Returns
-    /// New Party with generated secret key, or error if index is invalid
     pub fn new<R: RngCore + CryptoRng>(
         index: usize,
         params: &Arc<PvwParameters>,
@@ -79,9 +71,6 @@ impl Party {
 
         let secret_key = SecretKey::random(params, rng)?;
 
-        println!("[PARTY] Created party {} with secret key (k={}, l={}, variance={})", 
-                index, params.k, params.l, params.secret_variance);
-
         Ok(Self { index, secret_key })
     }
 
@@ -89,13 +78,6 @@ impl Party {
     ///
     /// Computes the public key as b_i = s_i * A + e_i where A is the CRS matrix.
     /// The result is stored in efficient RNS representation for cryptographic operations.
-    ///
-    /// # Arguments
-    /// * `crs` - Common reference string containing the A matrix
-    /// * `rng` - Random number generator for error sampling
-    ///
-    /// # Returns
-    /// PublicKey containing k polynomials in RNS form
     pub fn generate_public_key<R: RngCore + CryptoRng>(
         &self,
         crs: &PvwCrs,
@@ -117,18 +99,10 @@ impl Party {
 
 impl PublicKey {
     /// Generate a public key for a given secret key
-    /// 
+    ///
     /// Implements the PVW public key generation: b_i = s_i * A + e_i
     /// where s_i is the secret key, A is the CRS matrix, and e_i is sampled error.
     /// All polynomials are maintained in RNS form for efficiency.
-    ///
-    /// # Arguments
-    /// * `secret_key` - The secret key to generate a public key for
-    /// * `crs` - Common reference string containing matrix A
-    /// * `rng` - Random number generator for error sampling
-    ///
-    /// # Returns
-    /// PublicKey with k polynomials, or error if dimensions mismatch
     pub fn generate<R: RngCore + CryptoRng>(
         secret_key: &SecretKey,
         crs: &PvwCrs,
@@ -142,7 +116,7 @@ impl PublicKey {
             )));
         }
 
-        // Use CRS to compute matrix-vector multiplication: A * secret_key
+        // Compute A * secret_key using CRS matrix multiplication
         let sk_a_result = crs.multiply_by_secret_key(secret_key)?;
 
         // Generate error polynomials using the configured error bound
@@ -159,9 +133,6 @@ impl PublicKey {
             key_polynomials.push(result);
         }
 
-        println!("[PUBLIC_KEY] Generated public key with {} polynomials using error_bound_1={}", 
-                key_polynomials.len(), secret_key.params.error_bound_1);
-
         Ok(Self {
             key_polynomials,
             params: secret_key.params.clone(),
@@ -174,12 +145,6 @@ impl PublicKey {
     }
 
     /// Get a reference to the polynomial at position i
-    ///
-    /// # Arguments
-    /// * `i` - Index of the polynomial (0 <= i < k)
-    ///
-    /// # Returns
-    /// Reference to polynomial, or None if index is out of bounds
     pub fn get_polynomial(&self, i: usize) -> Option<&Poly> {
         self.key_polynomials.get(i)
     }
@@ -193,9 +158,6 @@ impl PublicKey {
     ///
     /// Ensures the public key has the expected number of polynomials
     /// and that all polynomials use the correct fhe.rs context.
-    ///
-    /// # Returns
-    /// Ok(()) if structure is valid, Err with details if invalid
     pub fn validate(&self) -> Result<()> {
         if self.key_polynomials.len() != self.params.k {
             return Err(PvwError::InvalidParameters(format!(
@@ -209,7 +171,8 @@ impl PublicKey {
         for (i, poly) in self.key_polynomials.iter().enumerate() {
             if !Arc::ptr_eq(&poly.ctx, &self.params.context) {
                 return Err(PvwError::InvalidParameters(format!(
-                    "Public key polynomial {} context mismatch", i
+                    "Public key polynomial {} context mismatch",
+                    i
                 )));
             }
         }
@@ -224,19 +187,10 @@ impl GlobalPublicKey {
     /// Initializes an empty n × k matrix to store public keys for all parties.
     /// The matrix is pre-allocated with zero polynomials using the correct
     /// fhe.rs context and representation.
-    ///
-    /// # Arguments
-    /// * `crs` - Common reference string that defines the system parameters
-    ///
-    /// # Returns
-    /// Empty GlobalPublicKey ready to receive party public keys
     pub fn new(crs: PvwCrs) -> Self {
         // Initialize matrix with zero polynomials
         let zero_poly = Poly::zero(&crs.params.context, Representation::Ntt);
         let matrix = Array2::from_elem((crs.params.n, crs.params.k), zero_poly);
-
-        println!("[GLOBAL_PK] Created global public key matrix ({}×{}) for {} parties", 
-                crs.params.n, crs.params.k, crs.params.n);
 
         Self {
             matrix,
@@ -250,13 +204,6 @@ impl GlobalPublicKey {
     ///
     /// Validates the public key structure and stores it in the global matrix.
     /// Updates the count of stored keys if this is a new party.
-    ///
-    /// # Arguments
-    /// * `index` - Party index (0 <= index < n)
-    /// * `public_key` - The public key to store
-    ///
-    /// # Returns
-    /// Ok(()) if successful, Err if validation fails or index is invalid
     pub fn add_public_key(&mut self, index: usize, public_key: PublicKey) -> Result<()> {
         // Validate index bounds
         if index >= self.params.n {
@@ -267,7 +214,7 @@ impl GlobalPublicKey {
             )));
         }
 
-        // Validate public key
+        // Validate public key structure
         public_key.validate()?;
         if public_key.params.k != self.params.k {
             return Err(PvwError::InvalidParameters(format!(
@@ -293,9 +240,6 @@ impl GlobalPublicKey {
             self.num_keys = index + 1;
         }
 
-        println!("[GLOBAL_PK] Added public key for party {} ({}/{} parties)", 
-                index, self.num_keys, self.params.n);
-
         Ok(())
     }
 
@@ -303,13 +247,6 @@ impl GlobalPublicKey {
     ///
     /// Convenience method that generates a public key for a party and
     /// immediately adds it to the global matrix.
-    ///
-    /// # Arguments
-    /// * `party` - The party to generate a public key for
-    /// * `rng` - Random number generator for error sampling
-    ///
-    /// # Returns
-    /// Ok(()) if successful, Err if generation or addition fails
     pub fn generate_and_add_party<R: RngCore + CryptoRng>(
         &mut self,
         party: &Party,
@@ -323,14 +260,6 @@ impl GlobalPublicKey {
     ///
     /// Alternative method for generating public keys when working directly
     /// with secret keys rather than Party objects.
-    ///
-    /// # Arguments
-    /// * `index` - Party index for the secret key
-    /// * `secret_key` - The secret key to generate a public key for
-    /// * `rng` - Random number generator for error sampling
-    ///
-    /// # Returns
-    /// Ok(()) if successful, Err if generation or addition fails
     pub fn generate_and_add<R: RngCore + CryptoRng>(
         &mut self,
         index: usize,
@@ -345,12 +274,6 @@ impl GlobalPublicKey {
     ///
     /// Reconstructs a PublicKey object from the stored polynomials.
     /// Returns None if the party index is invalid or no key is stored.
-    ///
-    /// # Arguments
-    /// * `index` - Party index (0 <= index < n)
-    ///
-    /// # Returns
-    /// PublicKey for the party, or None if not found
     pub fn get_public_key(&self, index: usize) -> Option<PublicKey> {
         if index >= self.num_keys {
             return None;
@@ -375,13 +298,6 @@ impl GlobalPublicKey {
     ///
     /// Direct access to matrix elements without reconstructing PublicKey objects.
     /// Useful for encryption operations that need specific polynomials.
-    ///
-    /// # Arguments
-    /// * `i` - Party index (row)
-    /// * `j` - Polynomial index within party's key (column)
-    ///
-    /// # Returns
-    /// Reference to polynomial, or None if indices are out of bounds
     pub fn get_polynomial(&self, i: usize, j: usize) -> Option<&Poly> {
         self.matrix.get((i, j))
     }
@@ -409,9 +325,6 @@ impl GlobalPublicKey {
     /// Validate the global public key structure
     ///
     /// Ensures the matrix has the correct dimensions according to the parameters.
-    ///
-    /// # Returns
-    /// Ok(()) if structure is valid, Err with details if invalid
     pub fn validate(&self) -> Result<()> {
         let (rows, cols) = self.matrix.dim();
         if rows != self.params.n || cols != self.params.k {
@@ -427,13 +340,6 @@ impl GlobalPublicKey {
     ///
     /// Batch operation to generate public keys for multiple parties at once.
     /// Useful for setup phases where all parties are known in advance.
-    ///
-    /// # Arguments
-    /// * `parties` - Slice of parties to generate keys for
-    /// * `rng` - Random number generator for error sampling
-    ///
-    /// # Returns
-    /// Ok(()) if all keys generated successfully, Err on first failure
     pub fn generate_all_party_keys<R: RngCore + CryptoRng>(
         &mut self,
         parties: &[Party],
@@ -451,7 +357,6 @@ impl GlobalPublicKey {
             self.generate_and_add_party(party, rng)?;
         }
 
-        println!("[GLOBAL_PK] Generated public keys for {} parties", parties.len());
         Ok(())
     }
 
@@ -459,13 +364,6 @@ impl GlobalPublicKey {
     ///
     /// Alternative batch operation when working with secret keys directly.
     /// Keys are assigned to party indices in order (0, 1, 2, ...).
-    ///
-    /// # Arguments
-    /// * `secret_keys` - Slice of secret keys to generate public keys for
-    /// * `rng` - Random number generator for error sampling
-    ///
-    /// # Returns
-    /// Ok(()) if all keys generated successfully, Err on first failure
     pub fn generate_all_keys<R: RngCore + CryptoRng>(
         &mut self,
         secret_keys: &[SecretKey],
@@ -483,7 +381,6 @@ impl GlobalPublicKey {
             self.generate_and_add(index, secret_key, rng)?;
         }
 
-        println!("[GLOBAL_PK] Generated public keys for {} secret keys", secret_keys.len());
         Ok(())
     }
 
@@ -491,12 +388,6 @@ impl GlobalPublicKey {
     ///
     /// Returns a cloned vector of polynomials for the specified party.
     /// This is used during encryption to access the recipient's public key.
-    ///
-    /// # Arguments
-    /// * `party_index` - Index of the party whose key is needed
-    ///
-    /// # Returns
-    /// Vector of k polynomials, or error if party not found
     pub fn get_party_polynomials(&self, party_index: usize) -> Result<Vec<Poly>> {
         if party_index >= self.num_keys {
             return Err(PvwError::InvalidParameters(format!(
@@ -510,7 +401,9 @@ impl GlobalPublicKey {
             if let Some(poly) = self.get_polynomial(party_index, j) {
                 polys.push(poly.clone());
             } else {
-                return Err(PvwError::InvalidParameters("Matrix access failed".to_string()));
+                return Err(PvwError::InvalidParameters(
+                    "Matrix access failed".to_string(),
+                ));
             }
         }
 
@@ -526,11 +419,7 @@ mod tests {
 
     /// Standard moduli suitable for PVW operations
     fn test_moduli() -> Vec<u64> {
-        vec![
-            0xffffee001u64,     
-            0xffffc4001u64,     
-            0x1ffffe0001u64,    
-        ]
+        vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64]
     }
 
     /// Create PVW parameters for testing with moderate security settings
@@ -549,10 +438,10 @@ mod tests {
     /// Create PVW parameters that satisfy the correctness condition
     fn create_correct_test_params() -> Arc<PvwParameters> {
         let moduli = test_moduli();
-        
-        let (variance, bound1, bound2) = PvwParameters::suggest_correct_parameters(5, 4, 8, &moduli)
-            .unwrap_or((1, 50, 100));
-        
+
+        let (variance, bound1, bound2) =
+            PvwParameters::suggest_correct_parameters(5, 4, 8, &moduli).unwrap_or((1, 50, 100));
+
         PvwParametersBuilder::new()
             .set_parties(5)
             .set_dimension(4)
@@ -635,8 +524,12 @@ mod tests {
         let mut global_pk = GlobalPublicKey::new(crs);
 
         // Generate and add public keys
-        global_pk.generate_and_add_party(&party_0, &mut rng).unwrap();
-        global_pk.generate_and_add_party(&party_1, &mut rng).unwrap();
+        global_pk
+            .generate_and_add_party(&party_0, &mut rng)
+            .unwrap();
+        global_pk
+            .generate_and_add_party(&party_1, &mut rng)
+            .unwrap();
 
         assert_eq!(global_pk.num_public_keys(), 2);
 
@@ -667,7 +560,9 @@ mod tests {
         let mut global_pk = GlobalPublicKey::new(crs);
 
         // Generate all keys at once
-        global_pk.generate_all_party_keys(&parties, &mut rng).unwrap();
+        global_pk
+            .generate_all_party_keys(&parties, &mut rng)
+            .unwrap();
 
         assert_eq!(global_pk.num_public_keys(), 3);
         assert!(!global_pk.is_full()); // 3 out of 5 parties

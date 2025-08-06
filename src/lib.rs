@@ -8,6 +8,8 @@ pub use crate::params::{PvwError, PvwParameters, PvwParametersBuilder, Result};
 pub use crate::public_key::{GlobalPublicKey, Party, PublicKey};
 pub use crate::secret_key::SecretKey;
 pub mod crs;
+pub mod decryption;
+pub mod encryption;
 pub mod normal;
 pub mod params;
 pub mod public_key;
