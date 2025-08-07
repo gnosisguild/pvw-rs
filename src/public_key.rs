@@ -171,8 +171,7 @@ impl PublicKey {
         for (i, poly) in self.key_polynomials.iter().enumerate() {
             if !Arc::ptr_eq(&poly.ctx, &self.params.context) {
                 return Err(PvwError::InvalidParameters(format!(
-                    "Public key polynomial {} context mismatch",
-                    i
+                    "Public key polynomial {i} context mismatch"
                 )));
             }
         }
@@ -229,8 +228,7 @@ impl GlobalPublicKey {
                 *matrix_entry = poly.clone();
             } else {
                 return Err(PvwError::InvalidParameters(format!(
-                    "Matrix access failed at ({}, {})",
-                    index, j
+                    "Matrix access failed at ({index}, {j})"
                 )));
             }
         }
@@ -391,8 +389,7 @@ impl GlobalPublicKey {
     pub fn get_party_polynomials(&self, party_index: usize) -> Result<Vec<Poly>> {
         if party_index >= self.num_keys {
             return Err(PvwError::InvalidParameters(format!(
-                "Party index {} not found",
-                party_index
+                "Party index {party_index} not found"
             )));
         }
 

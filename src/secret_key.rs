@@ -50,7 +50,7 @@ impl SecretKey {
         for _ in 0..params.k {
             // Sample coefficients using CBD with configured variance
             let coeffs = sample_vec_cbd(params.l, params.secret_variance as usize, rng)
-                .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {}", e)))?;
+                .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {e}")))?;
 
             secret_coeffs.push(coeffs);
         }
@@ -73,7 +73,7 @@ impl SecretKey {
 
         for coeffs in &self.secret_coeffs {
             let mut poly = Poly::from_coefficients(coeffs, &self.params.context).map_err(|e| {
-                PvwError::SamplingError(format!("Failed to create polynomial: {:?}", e))
+                PvwError::SamplingError(format!("Failed to create polynomial: {e:?}"))
             })?;
 
             poly.change_representation(Representation::Ntt);
@@ -104,9 +104,7 @@ impl SecretKey {
         }
 
         let mut poly = Poly::from_coefficients(&self.secret_coeffs[index], &self.params.context)
-            .map_err(|e| {
-                PvwError::SamplingError(format!("Failed to create polynomial: {:?}", e))
-            })?;
+            .map_err(|e| PvwError::SamplingError(format!("Failed to create polynomial: {e:?}")))?;
 
         poly.change_representation(Representation::Ntt);
         Ok(poly)
@@ -391,8 +389,7 @@ mod tests {
             for &coeff in row {
                 assert!(
                     coeff.abs() <= 2,
-                    "Coefficient {} exceeds expected bound 2 for CBD variance=1",
-                    coeff
+                    "Coefficient {coeff} exceeds expected bound 2 for CBD variance=1"
                 );
             }
         }
@@ -496,8 +493,7 @@ mod tests {
             for &coeff in row {
                 assert!(
                     coeff.abs() <= 4,
-                    "Coefficient {} should be in [-4,4] with variance=2",
-                    coeff
+                    "Coefficient {coeff} should be in [-4,4] with variance=2"
                 );
             }
         }
@@ -519,10 +515,7 @@ mod tests {
         assert!(max <= 2);
         assert!(mean.abs() < 1.0); // Mean should be close to 0 for random sampling
 
-        println!(
-            "✓ Coefficient statistics test passed - min: {}, max: {}, mean: {:.3}",
-            min, max, mean
-        );
+        println!("✓ Coefficient statistics test passed - min: {min}, max: {max}, mean: {mean:.3}");
     }
 
     #[test]
@@ -688,23 +681,14 @@ mod tests {
 
             assert!(
                 min >= -max_expected,
-                "Min coefficient {} should be >= -{} for variance {}",
-                min,
-                max_expected,
-                variance
+                "Min coefficient {min} should be >= -{max_expected} for variance {variance}"
             );
             assert!(
                 max <= max_expected,
-                "Max coefficient {} should be <= {} for variance {}",
-                max,
-                max_expected,
-                variance
+                "Max coefficient {max} should be <= {max_expected} for variance {variance}"
             );
 
-            println!(
-                "✓ Variance {} test passed - bounds: [{}, {}], mean: {:.3}",
-                variance, min, max, mean
-            );
+            println!("✓ Variance {variance} test passed - bounds: [{min}, {max}], mean: {mean:.3}");
         }
     }
 }

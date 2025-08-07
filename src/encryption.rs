@@ -58,8 +58,7 @@ impl PvwCiphertext {
         for (i, poly) in self.c1.iter().enumerate() {
             if !Arc::ptr_eq(&poly.ctx, &self.params.context) {
                 return Err(PvwError::InvalidParameters(format!(
-                    "c1[{}] context mismatch",
-                    i
+                    "c1[{i}] context mismatch"
                 )));
             }
         }
@@ -67,8 +66,7 @@ impl PvwCiphertext {
         for (i, poly) in self.c2.iter().enumerate() {
             if !Arc::ptr_eq(&poly.ctx, &self.params.context) {
                 return Err(PvwError::InvalidParameters(format!(
-                    "c2[{}] context mismatch",
-                    i
+                    "c2[{i}] context mismatch"
                 )));
             }
         }
@@ -137,10 +135,10 @@ pub fn encrypt<R: RngCore + CryptoRng>(
     let mut r_polys = Vec::with_capacity(params.k);
     for _ in 0..params.k {
         let r_coeffs = sample_vec_cbd(params.l, params.secret_variance as usize, rng)
-            .map_err(|e| PvwError::SamplingError(format!("Failed to sample randomness: {}", e)))?;
+            .map_err(|e| PvwError::SamplingError(format!("Failed to sample randomness: {e}")))?;
 
         let mut r_poly = Poly::from_coefficients(&r_coeffs, &params.context).map_err(|e| {
-            PvwError::SamplingError(format!("Failed to create r polynomial: {:?}", e))
+            PvwError::SamplingError(format!("Failed to create r polynomial: {e:?}"))
         })?;
 
         r_poly.change_representation(Representation::Ntt);
@@ -152,31 +150,30 @@ pub fn encrypt<R: RngCore + CryptoRng>(
     let mut c1 = global_pk.crs.multiply_by_randomness(&r_polys)?;
 
     // Add e1 noise to each component
-    for i in 0..params.k {
+    for (_i, c1_poly) in c1.iter_mut().enumerate().take(params.k) {
         let e1_poly = params.sample_error_1(rng)?;
-        c1[i] = &c1[i] + &e1_poly;
+        *c1_poly = &*c1_poly + &e1_poly;
     }
 
     // Compute c2 = B^T * r + e2 + encode(scalars)
     // Each c2[i] will be decryptable by party i
     let mut c2 = Vec::with_capacity(params.n);
 
-    for party_idx in 0..params.n {
+    for (party_idx, scalar) in scalars.iter().enumerate().take(params.n) {
         // Compute B^T[party_idx] * r (party_idx-th row of B^T times r)
         let mut party_result = Poly::zero(&params.context, Representation::Ntt);
 
-        for j in 0..params.k {
+        for (j, item) in r_polys.iter().enumerate().take(params.k) {
             let b_poly = global_pk.get_polynomial(party_idx, j).ok_or_else(|| {
-                PvwError::InvalidParameters(format!("Failed to access B[{}][{}]", party_idx, j))
+                PvwError::InvalidParameters(format!("Failed to access B[{party_idx}][{j}]"))
             })?;
 
-            let product = b_poly * &r_polys[j];
+            let product = b_poly * item;
             party_result = &party_result + &product;
         }
 
         // Add encoded scalar and noise: c2[i] = B^T[i]*r + encode(scalar[i]) + e2[i]
-        let scalar = scalars[party_idx];
-        let encoded_scalar = params.encode_scalar(scalar as i64)?;
+        let encoded_scalar = params.encode_scalar(*scalar as i64)?;
         let e2_poly = params.sample_error_2(rng)?;
 
         party_result = &party_result + &encoded_scalar + e2_poly;
@@ -300,8 +297,7 @@ pub fn validate_encoding(params: &PvwParameters) -> Result<()> {
     for (i, coeff) in coeffs.iter().take(params.l).enumerate() {
         if *coeff != expected_power {
             return Err(PvwError::InvalidParameters(format!(
-                "Gadget encoding incorrect at position {}: expected {}, got {}",
-                i, expected_power, coeff
+                "Gadget encoding incorrect at position {i}: expected {expected_power}, got {coeff}"
             )));
         }
         if i < params.l - 1 {
@@ -431,7 +427,7 @@ mod tests {
 
         // This should pass for correctly configured parameters
         let result = validate_encoding(&params);
-        assert!(result.is_ok(), "Encoding validation failed: {:?}", result);
+        assert!(result.is_ok(), "Encoding validation failed: {result:?}");
     }
 
     #[test]

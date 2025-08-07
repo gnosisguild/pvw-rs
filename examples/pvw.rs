@@ -56,8 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         params.q_total().bits()
     );
     println!(
-        "  • Error bounds: ({}, {}), Secret variance: {}",
-        suggested_bound1, suggested_bound2, suggested_variance
+        "  • Error bounds: ({suggested_bound1}, {suggested_bound2}), Secret variance: {suggested_variance}"
     );
     println!(
         "  • Correctness condition: {}",
@@ -102,15 +101,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
     print!("Dealer ");
     for i in 0..num_parties {
-        print!("{:>8}", format!("→P{}", i));
+        print!("{:>8}", format!("→P{i}"));
     }
     println!();
     println!("{}", "-".repeat(7 + num_parties * 8));
 
     for (dealer_id, vector) in all_party_vectors.iter().enumerate() {
-        print!("{:>6} ", dealer_id);
+        print!("{dealer_id:>6} ");
         for &value in vector {
-            print!("{:>8}", value);
+            print!("{value:>8}");
         }
         println!();
     }
@@ -128,17 +127,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut total_correct = 0;
     let mut total_values = 0;
 
-    for recipient_party in 0..num_parties {
+    for (recipient_party_index, recipient_party) in parties.iter().enumerate().take(num_parties) {
         // Use the new function to decrypt all shares intended for this party
         let party_shares = decryption::decrypt_party_shares(
             &all_ciphertexts,
-            &parties[recipient_party].secret_key,
-            recipient_party,
+            &recipient_party.secret_key,
+            recipient_party_index,
         )?;
 
         // Verify correctness
         for (dealer_idx, &decrypted_value) in party_shares.iter().enumerate() {
-            let expected_value = all_party_vectors[dealer_idx][recipient_party];
+            let expected_value = all_party_vectors[dealer_idx][recipient_party_index];
             if decrypted_value == expected_value {
                 total_correct += 1;
             }
@@ -160,15 +159,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
     print!("Recip ");
     for i in 0..num_parties {
-        print!("{:>8}", format!("←D{}", i));
+        print!("{:>8}", format!("←D{i}"));
     }
     println!();
     println!("{}", "-".repeat(6 + num_parties * 8));
 
     for (recipient_id, shares) in decryption_results.iter().enumerate() {
-        print!("{:>5} ", recipient_id);
+        print!("{recipient_id:>5} ");
         for &share in shares {
-            print!("{:>8}", share);
+            print!("{share:>8}");
         }
         println!();
     }
@@ -177,12 +176,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Verify the shares match the original distribution
     println!("🔍 {}", style("Verification:").blue().bold());
     let mut verification_details = Vec::new();
-    for recipient_party in 0..num_parties {
-        for dealer_party in 0..num_parties {
-            let expected = all_party_vectors[dealer_party][recipient_party];
-            let received = decryption_results[recipient_party][dealer_party];
+    for (recipient_party_index, _recipient_party) in
+        all_party_vectors.iter().enumerate().take(num_parties)
+    {
+        for (dealer_party_index, _dealer_party) in
+            all_party_vectors.iter().enumerate().take(num_parties)
+        {
+            let expected = all_party_vectors[dealer_party_index][recipient_party_index];
+            let received = decryption_results[recipient_party_index][dealer_party_index];
             let matches = expected == received;
-            verification_details.push((dealer_party, recipient_party, expected, received, matches));
+            verification_details.push((
+                dealer_party_index,
+                recipient_party_index,
+                expected,
+                received,
+                matches,
+            ));
         }
     }
 
@@ -195,10 +204,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if !mismatches.is_empty() {
         println!("  Mismatches found:");
         for (dealer, recipient, expected, received, _) in mismatches {
-            println!(
-                "    D{} → P{}: expected {}, got {}",
-                dealer, recipient, expected, received
-            );
+            println!("    D{dealer} → P{recipient}: expected {expected}, got {received}");
         }
     } else {
         println!("  ✓ All shares correctly transmitted and decrypted!");
@@ -207,31 +213,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Results summary
     let success_rate = (total_correct as f64 / total_values as f64) * 100.0;
     println!("📈 {}", style("Results Summary:").blue().bold());
-    println!(
-        "  • Success rate: {}/{} ({:.1}%)",
-        total_correct, total_values, success_rate
-    );
-    println!(
-        "  • Operations: {} encrypt calls, {} decrypt calls",
-        num_parties, num_parties
-    );
+    println!("  • Success rate: {total_correct}/{total_values} ({success_rate:.1}%)");
+    println!("  • Operations: {num_parties} encrypt calls, {num_parties} decrypt calls");
     println!();
 
     // Performance metrics
     println!("⚡ {}", style("Performance:").blue().bold());
     println!(
-        "  • Encryption time: {:?} ({:?} avg per dealer)",
-        encryption_time,
+        "  • Encryption time: {encryption_time:?} ({:?} avg per dealer)",
         encryption_time / num_parties as u32
     );
     println!(
-        "  • Decryption time: {:?} ({:?} avg per party)",
-        decryption_time,
+        "  • Decryption time: {decryption_time:?} ({:?} avg per party)",
         decryption_time / num_parties as u32
     );
     println!(
-        "  • Efficiency: {} individual decrypt operations in {} function calls",
-        total_values, num_parties
+        "  • Efficiency: {total_values} individual decrypt operations in {num_parties} function calls"
     );
     println!();
 
