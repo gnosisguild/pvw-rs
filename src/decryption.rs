@@ -4,6 +4,7 @@ use crate::secret_key::SecretKey;
 use fhe_math::rq::{Poly, Representation};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, Signed, ToPrimitive, Zero};
+use rayon::prelude::*;
 
 /// Decrypt a PVW ciphertext to recover the plaintext scalar for a specific party
 pub fn decrypt_party_value(
@@ -13,11 +14,20 @@ pub fn decrypt_party_value(
 ) -> Result<u64> {
     let params = &ciphertext.params;
 
-    // Compute <sk, c1> (inner product) - keep in NTT representation
+    // Compute <sk, c1> (inner product) in parallel - keep in NTT representation
+    let sk_c1_products: Result<Vec<Poly>> = (0..params.k)
+        .into_par_iter()
+        .map(|j| {
+            let sk_poly = secret_key.get_polynomial(j)?;
+            Ok(&sk_poly * &ciphertext.c1[j])
+        })
+        .collect();
+
+    let sk_c1_products = sk_c1_products?;
+
+    // Sum all products
     let mut sk_c1_sum = Poly::zero(&params.context, Representation::Ntt);
-    for j in 0..params.k {
-        let sk_poly = secret_key.get_polynomial(j)?;
-        let product = &sk_poly * &ciphertext.c1[j];
+    for product in sk_c1_products {
         sk_c1_sum = &sk_c1_sum + &product;
     }
 
@@ -275,14 +285,13 @@ fn extract_constant_term_as_u64(poly: &Poly, params: &PvwParameters) -> Result<u
 
 /// Decrypt all party values from a ciphertext using a single secret key
 pub fn decrypt_all_values(ciphertext: &PvwCiphertext, secret_key: &SecretKey) -> Result<Vec<u64>> {
-    let mut results = Vec::with_capacity(ciphertext.params.n);
+    // Decrypt all party values in parallel
+    let results: Result<Vec<u64>> = (0..ciphertext.params.n)
+        .into_par_iter()
+        .map(|party_index| decrypt_party_value(ciphertext, secret_key, party_index))
+        .collect();
 
-    for party_index in 0..ciphertext.params.n {
-        let scalar = decrypt_party_value(ciphertext, secret_key, party_index)?;
-        results.push(scalar);
-    }
-
-    Ok(results)
+    results
 }
 
 /// Decrypt all values intended for a specific party from multiple ciphertexts
@@ -331,21 +340,22 @@ pub fn decrypt_party_shares(
         )));
     }
 
-    let mut results = Vec::with_capacity(params.n);
+    // Decrypt all ciphertexts in parallel
+    let results: Result<Vec<u64>> = all_ciphertexts
+        .par_iter()
+        .enumerate()
+        .map(|(dealer_idx, ciphertext)| {
+            // Validate ciphertext structure
+            ciphertext.validate().map_err(|e| {
+                PvwError::InvalidParameters(format!("Ciphertext {dealer_idx} invalid: {e}"))
+            })?;
 
-    // For each dealer's ciphertext, decrypt the value intended for this party
-    for (dealer_idx, ciphertext) in all_ciphertexts.iter().enumerate() {
-        // Validate ciphertext structure
-        ciphertext.validate().map_err(|e| {
-            PvwError::InvalidParameters(format!("Ciphertext {dealer_idx} invalid: {e}"))
-        })?;
+            // Decrypt the value that dealer_idx encrypted for party_index
+            decrypt_party_value(ciphertext, secret_key, party_index)
+        })
+        .collect();
 
-        // Decrypt the value that dealer_idx encrypted for party_index
-        let decrypted_value = decrypt_party_value(ciphertext, secret_key, party_index)?;
-        results.push(decrypted_value);
-    }
-
-    Ok(results)
+    results
 }
 
 /// Threshold decryption using multiple secret keys
@@ -444,35 +454,38 @@ fn extract_all_coefficients_as_polys(poly: &Poly, params: &PvwParameters) -> Res
     temp_poly.change_representation(Representation::PowerBasis);
 
     let coeffs_biguint: Vec<BigUint> = Vec::from(&temp_poly);
-    let mut coeff_polys = Vec::with_capacity(params.l);
 
     let q_total = BigInt::from(params.q_total());
     let half_q = &q_total / 2;
 
-    for i in 0..params.l {
-        let coeff_bigint = if i < coeffs_biguint.len() {
-            let raw_coeff = BigInt::from(coeffs_biguint[i].clone());
-            if raw_coeff > half_q {
-                &raw_coeff - &q_total
+    // Extract all coefficients in parallel
+    let coeff_polys_result: Result<Vec<Poly>> = (0..params.l)
+        .into_par_iter()
+        .map(|i| {
+            let coeff_bigint = if i < coeffs_biguint.len() {
+                let raw_coeff = BigInt::from(coeffs_biguint[i].clone());
+                if raw_coeff > half_q {
+                    &raw_coeff - &q_total
+                } else {
+                    raw_coeff
+                }
             } else {
-                raw_coeff
+                BigInt::zero()
+            };
+
+            // Create polynomial with l coefficients: [coeff_bigint, 0, 0, ..., 0]
+            let mut const_coeffs = vec![BigInt::zero(); params.l];
+            const_coeffs[0] = coeff_bigint; // Set constant term
+
+            let mut const_poly = params.bigints_to_poly(&const_coeffs)?;
+            if params.l >= 8 {
+                const_poly.change_representation(Representation::Ntt);
             }
-        } else {
-            BigInt::zero()
-        };
+            Ok(const_poly)
+        })
+        .collect();
 
-        // Create polynomial with l coefficients: [coeff_bigint, 0, 0, ..., 0]
-        let mut const_coeffs = vec![BigInt::zero(); params.l];
-        const_coeffs[0] = coeff_bigint; // Set constant term
-
-        let mut const_poly = params.bigints_to_poly(&const_coeffs)?;
-        if params.l >= 8 {
-            const_poly.change_representation(Representation::Ntt);
-        }
-        coeff_polys.push(const_poly);
-    }
-
-    Ok(coeff_polys)
+    coeff_polys_result
 }
 
 #[cfg(test)]
@@ -540,15 +553,13 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         // Test data
         let test_scalars = vec![10u64, 25u64, 42u64];
 
         // Encrypt
-        let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
         assert!(ciphertext.validate().is_ok());
 
         // Decrypt each party's value
@@ -578,12 +589,10 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         let test_scalars = vec![5u64, 15u64, 33u64];
-        let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
 
         // Test decrypt_all_values function - this function tries to decrypt all values with one key
         // In PVW, each party can only correctly decrypt their own designated value
@@ -613,13 +622,11 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         // Test with zero values
         let zero_scalars = vec![0u64; params.n];
-        let ciphertext = encrypt(&zero_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&zero_scalars, &global_pk).unwrap();
 
         for (party_idx, item) in parties.iter().enumerate().take(params.n) {
             let decrypted = decrypt_party_value(&ciphertext, &item.secret_key, party_idx).unwrap();
@@ -641,14 +648,12 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         // Test individual small values
         for test_value in [1u64, 2u64, 7u64, 13u64] {
             let scalars = vec![test_value, 0u64, 0u64];
-            let ciphertext = encrypt(&scalars, &global_pk, &mut rng).unwrap();
+            let ciphertext = encrypt(&scalars, &global_pk).unwrap();
 
             let decrypted = decrypt_party_value(&ciphertext, &parties[0].secret_key, 0).unwrap();
             assert_eq!(
@@ -678,13 +683,11 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         // Use smaller test values for better reliability
         let test_scalars: Vec<u64> = (1..=params.n as u64).collect();
-        let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
 
         let mut successful_decryptions = 0;
         let mut total_attempts = 0;
@@ -733,15 +736,13 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         // Test multiple encryptions of the same values
         let test_scalars = vec![7u64, 14u64, 21u64];
 
         for trial in 0..3 {
-            let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+            let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
 
             for (party_idx, &expected) in test_scalars.iter().enumerate() {
                 let decrypted =
@@ -769,12 +770,10 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         let test_scalars = vec![11u64, 22u64, 33u64];
-        let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
 
         // Test threshold decryption with multiple keys
         let secret_keys: Vec<SecretKey> = parties.iter().map(|p| p.secret_key.clone()).collect();
@@ -805,9 +804,7 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         // Create share matrix: all_shares[dealer][recipient] = value
         let all_shares: Vec<Vec<u64>> = (0..params.n)
@@ -820,7 +817,7 @@ mod tests {
 
         // Encrypt all party shares (creates n ciphertexts)
         let all_ciphertexts =
-            crate::encryption::encrypt_all_party_shares(&all_shares, &global_pk, &mut rng).unwrap();
+            crate::encryption::encrypt_all_party_shares(&all_shares, &global_pk).unwrap();
         assert_eq!(all_ciphertexts.len(), params.n);
 
         // Each party decrypts their designated shares from all dealers
@@ -853,12 +850,10 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         let test_scalars = vec![100u64, 200u64, 300u64];
-        let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
 
         // Party 0 should not be able to correctly decrypt party 1's value
         let party_0_trying_to_decrypt_party_1 = decrypt_party_value(
@@ -967,9 +962,7 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         // Test edge case values
         let edge_cases = [
@@ -980,7 +973,7 @@ mod tests {
         ];
 
         for (test_idx, test_scalars) in edge_cases.iter().enumerate() {
-            let ciphertext = encrypt(test_scalars, &global_pk, &mut rng).unwrap();
+            let ciphertext = encrypt(test_scalars, &global_pk).unwrap();
 
             for (party_idx, &expected) in test_scalars.iter().enumerate() {
                 let decrypted =
@@ -1109,12 +1102,10 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         let test_scalars = vec![8u64, 16u64, 24u64];
-        let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
 
         // Test ciphertext component access
         assert_eq!(ciphertext.len(), params.n);
@@ -1147,12 +1138,10 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         let test_scalars = vec![1u64, 2u64, 3u64];
-        let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
 
         // Test invalid party index - should handle gracefully without panicking
         // Note: c2 vector has length params.n, so index params.n is out of bounds
@@ -1186,12 +1175,10 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         let test_scalars = vec![1u64, 2u64, 3u64];
-        let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
 
         // Test threshold decrypt with empty keys
         let empty_keys: Vec<SecretKey> = vec![];
@@ -1218,12 +1205,10 @@ mod tests {
             .map(|i| Party::new(i, &params, &mut rng).unwrap())
             .collect();
 
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         let test_scalars = vec![6u64, 12u64, 18u64];
-        let ciphertext = encrypt(&test_scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&test_scalars, &global_pk).unwrap();
 
         // Test that each party can correctly decrypt their own designated value
         for (party_idx, &expected) in test_scalars.iter().enumerate() {

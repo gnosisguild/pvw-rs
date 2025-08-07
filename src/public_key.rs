@@ -4,6 +4,7 @@ use crate::secret_key::SecretKey;
 use fhe_math::rq::{Poly, Representation};
 use ndarray::Array2;
 use rand::{CryptoRng, RngCore};
+use rayon::prelude::*;
 use std::sync::Arc;
 
 /// Individual party in the PVSS protocol
@@ -338,11 +339,7 @@ impl GlobalPublicKey {
     ///
     /// Batch operation to generate public keys for multiple parties at once.
     /// Useful for setup phases where all parties are known in advance.
-    pub fn generate_all_party_keys<R: RngCore + CryptoRng>(
-        &mut self,
-        parties: &[Party],
-        rng: &mut R,
-    ) -> Result<()> {
+    pub fn generate_all_party_keys(&mut self, parties: &[Party]) -> Result<()> {
         if parties.len() > self.params.n {
             return Err(PvwError::InvalidParameters(format!(
                 "Too many parties: {} > {}",
@@ -351,8 +348,19 @@ impl GlobalPublicKey {
             )));
         }
 
-        for party in parties {
-            self.generate_and_add_party(party, rng)?;
+        // Generate all public keys in parallel
+        let public_keys: Result<Vec<(usize, PublicKey)>> = parties
+            .par_iter()
+            .map(|party| {
+                let mut local_rng = rand::thread_rng();
+                let public_key = party.generate_public_key(&self.crs, &mut local_rng)?;
+                Ok((party.index, public_key))
+            })
+            .collect();
+
+        // Add all public keys to the global key
+        for (index, public_key) in public_keys? {
+            self.add_public_key(index, public_key)?;
         }
 
         Ok(())
@@ -362,11 +370,7 @@ impl GlobalPublicKey {
     ///
     /// Alternative batch operation when working with secret keys directly.
     /// Keys are assigned to party indices in order (0, 1, 2, ...).
-    pub fn generate_all_keys<R: RngCore + CryptoRng>(
-        &mut self,
-        secret_keys: &[SecretKey],
-        rng: &mut R,
-    ) -> Result<()> {
+    pub fn generate_all_keys(&mut self, secret_keys: &[SecretKey]) -> Result<()> {
         if secret_keys.len() > self.params.n {
             return Err(PvwError::InvalidParameters(format!(
                 "Too many secret keys: {} > {}",
@@ -375,8 +379,20 @@ impl GlobalPublicKey {
             )));
         }
 
-        for (index, secret_key) in secret_keys.iter().enumerate() {
-            self.generate_and_add(index, secret_key, rng)?;
+        // Generate all public keys in parallel
+        let public_keys: Result<Vec<(usize, PublicKey)>> = secret_keys
+            .par_iter()
+            .enumerate()
+            .map(|(index, secret_key)| {
+                let mut local_rng = rand::thread_rng();
+                let public_key = PublicKey::generate(secret_key, &self.crs, &mut local_rng)?;
+                Ok((index, public_key))
+            })
+            .collect();
+
+        // Add all public keys to the global key
+        for (index, public_key) in public_keys? {
+            self.add_public_key(index, public_key)?;
         }
 
         Ok(())
@@ -557,9 +573,7 @@ mod tests {
         let mut global_pk = GlobalPublicKey::new(crs);
 
         // Generate all keys at once
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         assert_eq!(global_pk.num_public_keys(), 3);
         assert!(!global_pk.is_full()); // 3 out of 5 parties
@@ -586,7 +600,7 @@ mod tests {
         let mut global_pk = GlobalPublicKey::new(crs);
 
         // Generate all keys from secret keys
-        global_pk.generate_all_keys(&secret_keys, &mut rng).unwrap();
+        global_pk.generate_all_keys(&secret_keys).unwrap();
 
         assert_eq!(global_pk.num_public_keys(), 2);
 
