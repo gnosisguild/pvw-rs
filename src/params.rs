@@ -155,7 +155,7 @@ impl PvwParametersBuilder {
 
         // Create fhe.rs Context
         let context = Context::new_arc(&moduli, l)
-            .map_err(|e| PvwError::InvalidParameters(format!("Context creation failed: {}", e)))?;
+            .map_err(|e| PvwError::InvalidParameters(format!("Context creation failed: {e}")))?;
 
         // Compute delta = ⌊Q^(1/ℓ)⌋
         let q_total = moduli
@@ -261,11 +261,10 @@ impl PvwParameters {
     /// Sample secret key polynomial with variance = secret_variance (CBD with coefficients)
     pub fn sample_secret_polynomial<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Result<Poly> {
         let coeffs = sample_vec_cbd(self.l, self.secret_variance as usize, rng)
-            .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {}", e)))?;
+            .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {e}")))?;
 
-        let mut poly = Poly::from_coefficients(&coeffs, &self.context).map_err(|e| {
-            PvwError::SamplingError(format!("Failed to create polynomial: {:?}", e))
-        })?;
+        let mut poly = Poly::from_coefficients(&coeffs, &self.context)
+            .map_err(|e| PvwError::SamplingError(format!("Failed to create polynomial: {e:?}")))?;
 
         poly.change_representation(Representation::Ntt);
         Ok(poly)
@@ -418,7 +417,7 @@ impl PvwParameters {
         coeffs[0] = scalar;
 
         let poly = Poly::from_coefficients(&coeffs, &self.context).map_err(|e| {
-            PvwError::InvalidParameters(format!("Failed to create scalar polynomial: {:?}", e))
+            PvwError::InvalidParameters(format!("Failed to create scalar polynomial: {e:?}"))
         })?;
 
         // Note: from_coefficients creates in PowerBasis, convert to NTT if needed
@@ -455,8 +454,7 @@ impl PvwParameters {
                 }
                 let u64_value = reduced.to_u64().ok_or_else(|| {
                     PvwError::InvalidParameters(format!(
-                        "Residue doesn't fit in u64 for coefficient {}, modulus {}",
-                        col, modulus
+                        "Residue doesn't fit in u64 for coefficient {col}, modulus {modulus}"
                     ))
                 })?;
 
@@ -479,8 +477,7 @@ impl PvwParameters {
         )
         .map_err(|e| {
             PvwError::InvalidParameters(format!(
-                "Failed to create polynomial from RNS coefficients: {:?}",
-                e
+                "Failed to create polynomial from RNS coefficients: {e:?}"
             ))
         })?;
 
@@ -618,14 +615,13 @@ mod tests {
         ];
 
         for (n, k, l) in test_cases {
-            println!("\n=== Testing parameters: n={}, k={}, l={} ===", n, k, l);
+            println!("\n=== Testing parameters: n={n}, k={k}, l={l} ===");
 
             // Get suggested correct parameters
             match PvwParameters::suggest_correct_parameters(n, k, l, &moduli) {
                 Ok((secret_variance, error_bound_1, error_bound_2)) => {
                     println!(
-                        "Suggested parameters found: variance={}, bound1={}, bound2={}",
-                        secret_variance, error_bound_1, error_bound_2
+                        "Suggested parameters found: variance={secret_variance}, bound1={error_bound_1}, bound2={error_bound_2}"
                     );
 
                     // Create parameters with suggested bounds
@@ -648,13 +644,13 @@ mod tests {
                             match params.verify_parameters() {
                                 Ok(true) => println!("✓ All parameter checks passed!"),
                                 Ok(false) => println!("✗ Parameter verification failed"),
-                                Err(e) => println!("✗ Verification error: {}", e),
+                                Err(e) => println!("✗ Verification error: {e}"),
                             }
                         }
-                        Err(e) => println!("✗ Failed to create parameters: {}", e),
+                        Err(e) => println!("✗ Failed to create parameters: {e}"),
                     }
                 }
-                Err(e) => println!("✗ Could not find suitable parameters: {}", e),
+                Err(e) => println!("✗ Could not find suitable parameters: {e}"),
             }
         }
     }
@@ -682,7 +678,7 @@ mod tests {
                     println!("✗ Correctness condition NOT satisfied");
                 }
             }
-            Err(e) => println!("Method 1 failed: {}", e),
+            Err(e) => println!("Method 1 failed: {e}"),
         }
 
         // Method 2: Using direct constructor
@@ -705,7 +701,7 @@ mod tests {
                     println!("✗ Correctness condition NOT satisfied");
                 }
             }
-            Err(e) => println!("Method 2 failed: {}", e),
+            Err(e) => println!("Method 2 failed: {e}"),
         }
 
         // Method 3: Get suggested correct parameters first
@@ -724,7 +720,7 @@ mod tests {
                         "Should satisfy correctness condition"
                     );
                 }
-                Err(e) => println!("Method 3 failed: {}", e),
+                Err(e) => println!("Method 3 failed: {e}"),
             }
         }
     }
@@ -754,14 +750,13 @@ mod bigint_conversion_tests {
             assert_eq!(
                 *coeff,
                 BigUint::zero(),
-                "Zero coefficient {} should remain zero",
-                i
+                "Zero coefficient {i} should remain zero"
             );
         }
         println!("✓ Zero polynomial test passed");
 
         // Test case 2: Simple positive values
-        let simple_coeffs: Vec<BigInt> = (1..=params.l).map(|i| BigInt::from(i)).collect();
+        let simple_coeffs: Vec<BigInt> = (1..=params.l).map(BigInt::from).collect();
         let simple_poly = params
             .bigints_to_poly(&simple_coeffs)
             .expect("Failed to convert simple coefficients");
@@ -773,7 +768,7 @@ mod bigint_conversion_tests {
             .enumerate()
         {
             let expected = original.to_biguint().unwrap();
-            assert_eq!(*recovered, expected, "Simple coefficient {} mismatch", i);
+            assert_eq!(*recovered, expected, "Simple coefficient {i} mismatch");
         }
         println!("✓ Simple positive values test passed");
 
@@ -796,8 +791,7 @@ mod bigint_conversion_tests {
                 .unwrap();
             assert_eq!(
                 *recovered, expected_reduced,
-                "Large coefficient {} mismatch",
-                i
+                "Large coefficient {i} mismatch"
             );
         }
         println!("✓ Large values test passed");
@@ -834,8 +828,7 @@ mod bigint_conversion_tests {
 
             assert_eq!(
                 *recovered, expected_biguint,
-                "Negative coefficient {} mismatch",
-                i
+                "Negative coefficient {i} mismatch"
             );
         }
         println!("✓ Negative values test passed");
@@ -885,8 +878,7 @@ mod bigint_conversion_tests {
 
             assert_eq!(
                 recovered_bigint, expected,
-                "Round-trip failed for coefficient {}: original={}, expected={}, got={}",
-                i, original, expected, recovered_bigint
+                "Round-trip failed for coefficient {i}: original={original}, expected={expected}, got={recovered_bigint}"
             );
         }
         println!("✓ Round-trip conversion test passed");
@@ -913,7 +905,7 @@ mod bigint_conversion_tests {
 
         println!("Gadget coefficients after CRT lift:");
         for (i, coeff) in gadget_coeffs.iter().enumerate() {
-            println!("  coeff[{}] = {}", i, coeff);
+            println!("  coeff[{i}] = {coeff}");
         }
 
         // Verify gadget structure: [1, Δ, Δ², ..., Δ^(ℓ-1)]
@@ -921,8 +913,7 @@ mod bigint_conversion_tests {
         for (i, coeff) in gadget_coeffs.iter().enumerate() {
             assert_eq!(
                 *coeff, expected_delta_power,
-                "Gadget coefficient {} should be Delta^{} = {}, got {}",
-                i, i, expected_delta_power, coeff
+                "Gadget coefficient {i} should be Delta^{i} = {expected_delta_power}, got {coeff}"
             );
 
             if i < params.l - 1 {
@@ -981,8 +972,7 @@ mod bigint_conversion_tests {
         let avg_time = elapsed / num_iterations;
 
         println!(
-            "✓ Performance test: {} conversions in {:?}, avg {:?} per conversion",
-            num_iterations, elapsed, avg_time
+            "✓ Performance test: {num_iterations} conversions in {elapsed:?}, avg {avg_time:?} per conversion"
         );
 
         // Should be reasonably fast (less than 1ms per conversion for small polynomials)
@@ -1020,8 +1010,7 @@ mod bigint_conversion_tests {
         {
             assert_eq!(
                 *direct, *bigint,
-                "Coefficient {} differs between direct and BigInt conversion",
-                i
+                "Coefficient {i} differs between direct and BigInt conversion"
             );
         }
         println!("✓ Comparison with direct fhe.rs conversion test passed");

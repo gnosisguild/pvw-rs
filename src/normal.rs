@@ -253,13 +253,12 @@ mod tests {
         let has_large_values = samples.iter().any(|x| x.bits() > 50);
 
         let max_bits = samples.iter().map(|x| x.bits()).max().unwrap_or(0);
-        println!("Maximum bits in samples: {}", max_bits);
+        println!("Maximum bits in samples: {max_bits}");
         println!("Large variance bits: {}", large_variance.bits());
 
         assert!(
             has_large_values,
-            "Should have some large values with 100-bit variance. Max bits: {}",
-            max_bits
+            "Should have some large values with 100-bit variance. Max bits: {max_bits}"
         );
     }
 
@@ -330,11 +329,10 @@ mod tests {
             samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / samples.len() as f64;
 
         // Should be approximately N(0,1)
-        assert!(mean.abs() < 0.2, "Mean should be close to 0, got {}", mean);
+        assert!(mean.abs() < 0.2, "Mean should be close to 0, got {mean}");
         assert!(
             (variance - 1.0).abs() < 0.3,
-            "Variance should be close to 1, got {}",
-            variance
+            "Variance should be close to 1, got {variance}"
         );
     }
 
@@ -399,10 +397,7 @@ mod tests {
         for sample in &samples {
             assert!(
                 sample >= &(-&bound) && sample <= &bound,
-                "Sample {} outside bounds [-{}, {}]",
-                sample,
-                bound,
-                bound
+                "Sample {sample} outside bounds [-{bound}, {bound}]"
             );
         }
     }

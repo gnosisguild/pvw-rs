@@ -187,12 +187,12 @@ impl PvwCrs {
         for i in 0..self.params.k {
             let mut sum = Poly::zero(&self.params.context, Representation::Ntt);
 
-            for j in 0..self.params.k {
+            for (j, randomness_poly) in randomness.iter().enumerate().take(self.params.k) {
                 let crs_poly = self
                     .get(i, j)
                     .ok_or_else(|| PvwError::InvalidParameters("Invalid CRS index".to_string()))?;
 
-                let product = crs_poly * &randomness[j];
+                let product = crs_poly * randomness_poly;
                 sum = &sum + &product;
             }
 

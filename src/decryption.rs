@@ -4,7 +4,6 @@ use crate::secret_key::SecretKey;
 use fhe_math::rq::{Poly, Representation};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, Signed, ToPrimitive, Zero};
-use std::sync::Arc;
 
 /// Decrypt a PVW ciphertext to recover the plaintext scalar for a specific party
 pub fn decrypt_party_value(
@@ -51,8 +50,8 @@ fn decode_scalar_pvw_rns(noisy_poly: &Poly, params: &PvwParameters) -> Result<u6
 
     // Compute last component using Horner's method in RNS
     let mut last_component = tmp_polys[0].clone();
-    for i in 1..(ell - 1) {
-        last_component = &(&last_component * &delta_poly) + &tmp_polys[i];
+    for (_i, item) in tmp_polys.iter().enumerate().take(ell - 1).skip(1) {
+        last_component = &(&last_component * &delta_poly) + item;
     }
 
     // Reduce modulo Delta^{ell-1}
@@ -338,7 +337,7 @@ pub fn decrypt_party_shares(
     for (dealer_idx, ciphertext) in all_ciphertexts.iter().enumerate() {
         // Validate ciphertext structure
         ciphertext.validate().map_err(|e| {
-            PvwError::InvalidParameters(format!("Ciphertext {} invalid: {}", dealer_idx, e))
+            PvwError::InvalidParameters(format!("Ciphertext {dealer_idx} invalid: {e}"))
         })?;
 
         // Decrypt the value that dealer_idx encrypted for party_index
@@ -414,8 +413,8 @@ fn decode_scalar_pvw_rns_optimized(noisy_poly: &Poly, params: &PvwParameters) ->
 
     // Horner's method for last component
     let mut last_component = tmp_polys[0].clone();
-    for i in 1..(ell - 1) {
-        last_component = &(&last_component * &delta_powers[1]) + &tmp_polys[i];
+    for (_i, item) in tmp_polys.iter().enumerate().take(ell - 1).skip(1) {
+        last_component = &(&last_component * &delta_powers[1]) + item;
     }
 
     // Modular reduction
@@ -484,6 +483,7 @@ mod tests {
     use crate::params::PvwParametersBuilder;
     use crate::public_key::{GlobalPublicKey, Party};
     use rand::thread_rng;
+    use std::sync::Arc;
 
     /// Standard moduli suitable for PVW operations
     fn test_moduli() -> Vec<u64> {
@@ -558,8 +558,7 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 decrypted, expected_scalar,
-                "Decryption failed for party {}",
-                party_idx
+                "Decryption failed for party {party_idx}"
             );
         }
 
@@ -622,15 +621,9 @@ mod tests {
         let zero_scalars = vec![0u64; params.n];
         let ciphertext = encrypt(&zero_scalars, &global_pk, &mut rng).unwrap();
 
-        for party_idx in 0..params.n {
-            let decrypted =
-                decrypt_party_value(&ciphertext, &parties[party_idx].secret_key, party_idx)
-                    .unwrap();
-            assert_eq!(
-                decrypted, 0,
-                "Zero decryption failed for party {}",
-                party_idx
-            );
+        for (party_idx, item) in parties.iter().enumerate().take(params.n) {
+            let decrypted = decrypt_party_value(&ciphertext, &item.secret_key, party_idx).unwrap();
+            assert_eq!(decrypted, 0, "Zero decryption failed for party {party_idx}");
         }
 
         println!("✓ Zero scalar encryption test passed");
@@ -660,8 +653,7 @@ mod tests {
             let decrypted = decrypt_party_value(&ciphertext, &parties[0].secret_key, 0).unwrap();
             assert_eq!(
                 decrypted, test_value,
-                "Single scalar {} decryption failed",
-                test_value
+                "Single scalar {test_value} decryption failed"
             );
         }
 
@@ -707,10 +699,7 @@ mod tests {
             if decrypted == expected {
                 successful_decryptions += 1;
             } else {
-                println!(
-                    "  Party {} decryption: expected {}, got {}",
-                    party_idx, expected, decrypted
-                );
+                println!("  Party {party_idx} decryption: expected {expected}, got {decrypted}");
             }
         }
 
@@ -760,8 +749,7 @@ mod tests {
                         .unwrap();
                 assert_eq!(
                     decrypted, expected,
-                    "Trial {} party {} decryption failed",
-                    trial, party_idx
+                    "Trial {trial} party {party_idx} decryption failed"
                 );
             }
         }
@@ -836,18 +824,16 @@ mod tests {
         assert_eq!(all_ciphertexts.len(), params.n);
 
         // Each party decrypts their designated shares from all dealers
-        for party_idx in 0..params.n {
+        for (party_idx, item) in parties.iter().enumerate().take(params.n) {
             let party_shares =
-                decrypt_party_shares(&all_ciphertexts, &parties[party_idx].secret_key, party_idx)
-                    .unwrap();
+                decrypt_party_shares(&all_ciphertexts, &item.secret_key, party_idx).unwrap();
 
             // Verify party_idx got the correct values from all dealers
             for (dealer_idx, &decrypted_value) in party_shares.iter().enumerate() {
                 let expected_value = all_shares[dealer_idx][party_idx];
                 assert_eq!(
                     decrypted_value, expected_value,
-                    "Party {} failed to decrypt value from dealer {}",
-                    party_idx, dealer_idx
+                    "Party {party_idx} failed to decrypt value from dealer {dealer_idx}"
                 );
             }
         }
@@ -920,9 +906,7 @@ mod tests {
         };
         assert!(
             decoded <= original_u64 + 10,
-            "Decoded value {} too far from original {}",
-            decoded,
-            original_u64
+            "Decoded value {decoded} too far from original {original_u64}"
         );
 
         println!("✓ Decode scalar robust public test passed");
@@ -965,9 +949,7 @@ mod tests {
         let original_u64 = test_scalar as u64;
         assert!(
             decoded <= original_u64 + 5,
-            "Optimized decoding result {} too far from {}",
-            decoded,
-            original_u64
+            "Optimized decoding result {decoded} too far from {original_u64}"
         );
 
         println!("✓ Optimized decoding test passed");
@@ -1006,8 +988,7 @@ mod tests {
                         .unwrap();
                 assert_eq!(
                     decrypted, expected,
-                    "Edge case {} party {} failed",
-                    test_idx, party_idx
+                    "Edge case {test_idx} party {party_idx} failed"
                 );
             }
         }
@@ -1063,8 +1044,7 @@ mod tests {
             let extracted_const = extract_constant_term_bigint(&extracted_poly, &params).unwrap();
             assert_eq!(
                 &extracted_const, expected_coeff,
-                "Coefficient {} extraction failed",
-                i
+                "Coefficient {i} extraction failed"
             );
         }
 
@@ -1077,8 +1057,7 @@ mod tests {
                 extract_constant_term_bigint(&all_coeff_polys[i], &params).unwrap();
             assert_eq!(
                 &extracted_const, expected_coeff,
-                "All coefficients extraction failed at {}",
-                i
+                "All coefficients extraction failed at {i}"
             );
         }
 
@@ -1102,8 +1081,7 @@ mod tests {
         // Result should be equivalent to 3 (the remainder)
         assert!(
             reduced_const.abs() <= BigInt::from(10),
-            "Modular reduction produced unexpected result: {}",
-            reduced_const
+            "Modular reduction produced unexpected result: {reduced_const}"
         );
 
         // Test division by delta
@@ -1254,8 +1232,7 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 individual_result, expected,
-                "Party {} couldn't decrypt their own value",
-                party_idx
+                "Party {party_idx} couldn't decrypt their own value"
             );
         }
 
