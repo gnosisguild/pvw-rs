@@ -14,6 +14,7 @@ use pvw::{
     PvwParameters,
 };
 use rand::rngs::OsRng;
+use rayon::prelude::*;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -117,25 +118,34 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Encrypt all party vectors (creates n ciphertexts, one per dealer)
     let start_time = std::time::Instant::now();
-    let all_ciphertexts =
-        encryption::encrypt_all_party_shares(&all_party_vectors, &global_pk, &mut rng)?;
+    let all_ciphertexts = encryption::encrypt_all_party_shares(&all_party_vectors, &global_pk)?;
     let encryption_time = start_time.elapsed();
 
     // Decrypt shares using the new efficient function
     let start_decrypt = std::time::Instant::now();
-    let mut decryption_results: Vec<Vec<u64>> = Vec::new();
+
+    // Decrypt all party shares in parallel
+    let decryption_results: Result<Vec<Vec<u64>>, pvw::params::PvwError> = parties
+        .par_iter()
+        .enumerate()
+        .take(num_parties)
+        .map(|(recipient_party_index, recipient_party)| {
+            // Use the new function to decrypt all shares intended for this party
+            decryption::decrypt_party_shares(
+                &all_ciphertexts,
+                &recipient_party.secret_key,
+                recipient_party_index,
+            )
+        })
+        .collect();
+
+    let decryption_results = decryption_results?;
+    let decryption_time = start_decrypt.elapsed();
+
+    // Count correct decryptions
     let mut total_correct = 0;
     let mut total_values = 0;
-
-    for (recipient_party_index, recipient_party) in parties.iter().enumerate().take(num_parties) {
-        // Use the new function to decrypt all shares intended for this party
-        let party_shares = decryption::decrypt_party_shares(
-            &all_ciphertexts,
-            &recipient_party.secret_key,
-            recipient_party_index,
-        )?;
-
-        // Verify correctness
+    for (recipient_party_index, party_shares) in decryption_results.iter().enumerate() {
         for (dealer_idx, &decrypted_value) in party_shares.iter().enumerate() {
             let expected_value = all_party_vectors[dealer_idx][recipient_party_index];
             if decrypted_value == expected_value {
@@ -143,10 +153,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             total_values += 1;
         }
-
-        decryption_results.push(party_shares);
     }
-    let decryption_time = start_decrypt.elapsed();
 
     // Display received shares matrix
     println!(

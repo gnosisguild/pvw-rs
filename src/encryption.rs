@@ -2,7 +2,7 @@ use crate::params::{PvwError, PvwParameters, Result};
 use crate::public_key::GlobalPublicKey;
 use fhe_math::rq::{Poly, Representation};
 use fhe_util::sample_vec_cbd;
-use rand::{CryptoRng, RngCore};
+use rayon::prelude::*;
 use std::sync::Arc;
 
 /// Ciphertext output of PVW encryption for PVSS
@@ -101,11 +101,7 @@ impl PvwCiphertext {
 ///
 /// The encryption follows: c1 = A*r + e1, c2 = B^T*r + e2 + encode(scalars)
 /// where A is the CRS, B is the global public key matrix, and r is randomness.
-pub fn encrypt<R: RngCore + CryptoRng>(
-    scalars: &[u64],
-    global_pk: &GlobalPublicKey,
-    rng: &mut R,
-) -> Result<PvwCiphertext> {
+pub fn encrypt(scalars: &[u64], global_pk: &GlobalPublicKey) -> Result<PvwCiphertext> {
     let params = &global_pk.params;
 
     // Validate input dimensions
@@ -133,10 +129,21 @@ pub fn encrypt<R: RngCore + CryptoRng>(
     // Sample randomness vector r ∈ R_q^k using CBD
     // This provides the shared randomness that links c1 and c2 components
     let mut r_polys = Vec::with_capacity(params.k);
-    for _ in 0..params.k {
-        let r_coeffs = sample_vec_cbd(params.l, params.secret_variance as usize, rng)
-            .map_err(|e| PvwError::SamplingError(format!("Failed to sample randomness: {e}")))?;
 
+    // Generate randomness polynomials in parallel
+    let r_coeffs_vec: Result<Vec<Vec<i64>>> = (0..params.k)
+        .into_par_iter()
+        .map(|_| {
+            let mut local_rng = rand::thread_rng();
+            sample_vec_cbd(params.l, params.secret_variance as usize, &mut local_rng)
+                .map_err(|e| PvwError::SamplingError(format!("Failed to sample randomness: {e}")))
+        })
+        .collect();
+
+    let r_coeffs_vec = r_coeffs_vec?;
+
+    // Convert coefficients to polynomials
+    for r_coeffs in r_coeffs_vec {
         let mut r_poly = Poly::from_coefficients(&r_coeffs, &params.context).map_err(|e| {
             PvwError::SamplingError(format!("Failed to create r polynomial: {e:?}"))
         })?;
@@ -150,35 +157,48 @@ pub fn encrypt<R: RngCore + CryptoRng>(
     let mut c1 = global_pk.crs.multiply_by_randomness(&r_polys)?;
 
     // Add e1 noise to each component
-    for (_i, c1_poly) in c1.iter_mut().enumerate().take(params.k) {
-        let e1_poly = params.sample_error_1(rng)?;
+    let e1_polys: Result<Vec<Poly>> = (0..params.k)
+        .into_par_iter()
+        .map(|_| {
+            let mut local_rng = rand::thread_rng();
+            params.sample_error_1(&mut local_rng)
+        })
+        .collect();
+
+    let e1_polys = e1_polys?;
+
+    for (c1_poly, e1_poly) in c1.iter_mut().zip(e1_polys) {
         *c1_poly = &*c1_poly + &e1_poly;
     }
 
     // Compute c2 = B^T * r + e2 + encode(scalars)
     // Each c2[i] will be decryptable by party i
-    let mut c2 = Vec::with_capacity(params.n);
+    let c2_components: Result<Vec<Poly>> = (0..params.n)
+        .into_par_iter()
+        .map(|party_idx| {
+            let mut local_rng = rand::thread_rng();
 
-    for (party_idx, scalar) in scalars.iter().enumerate().take(params.n) {
-        // Compute B^T[party_idx] * r (party_idx-th row of B^T times r)
-        let mut party_result = Poly::zero(&params.context, Representation::Ntt);
+            // Compute B^T[party_idx] * r (party_idx-th row of B^T times r)
+            let mut party_result = Poly::zero(&params.context, Representation::Ntt);
 
-        for (j, item) in r_polys.iter().enumerate().take(params.k) {
-            let b_poly = global_pk.get_polynomial(party_idx, j).ok_or_else(|| {
-                PvwError::InvalidParameters(format!("Failed to access B[{party_idx}][{j}]"))
-            })?;
+            for (j, item) in r_polys.iter().enumerate().take(params.k) {
+                let b_poly = global_pk.get_polynomial(party_idx, j).ok_or_else(|| {
+                    PvwError::InvalidParameters(format!("Failed to access B[{party_idx}][{j}]"))
+                })?;
 
-            let product = b_poly * item;
-            party_result = &party_result + &product;
-        }
+                let product = b_poly * item;
+                party_result = &party_result + &product;
+            }
 
-        // Add encoded scalar and noise: c2[i] = B^T[i]*r + encode(scalar[i]) + e2[i]
-        let encoded_scalar = params.encode_scalar(*scalar as i64)?;
-        let e2_poly = params.sample_error_2(rng)?;
+            // Add encoded scalar and noise: c2[i] = B^T[i]*r + encode(scalar[i]) + e2[i]
+            let encoded_scalar = params.encode_scalar(scalars[party_idx] as i64)?;
+            let e2_poly = params.sample_error_2(&mut local_rng)?;
 
-        party_result = &party_result + &encoded_scalar + e2_poly;
-        c2.push(party_result);
-    }
+            Ok(party_result + encoded_scalar + e2_poly)
+        })
+        .collect();
+
+    let c2 = c2_components?;
 
     let ciphertext = PvwCiphertext {
         c1,
@@ -197,11 +217,10 @@ pub fn encrypt<R: RngCore + CryptoRng>(
 /// In PVSS, each party (dealer) encrypts their secret shares such that
 /// party i receives share[i]. This creates a ciphertext where each party
 /// can decrypt exactly one component - their designated share.
-pub fn encrypt_party_shares<R: RngCore + CryptoRng>(
+pub fn encrypt_party_shares(
     party_shares: &[u64], // This party's n secret shares
     party_index: usize,   // Which party is encrypting (for validation)
     global_pk: &GlobalPublicKey,
-    rng: &mut R,
 ) -> Result<PvwCiphertext> {
     if party_index >= global_pk.params.n {
         return Err(PvwError::InvalidParameters(format!(
@@ -221,7 +240,7 @@ pub fn encrypt_party_shares<R: RngCore + CryptoRng>(
 
     // For PVSS: each party encrypts their n shares
     // This creates a ciphertext where c2[i] encrypts party_shares[i]
-    encrypt(party_shares, global_pk, rng)
+    encrypt(party_shares, global_pk)
 }
 
 /// Encrypt all parties' shares for complete PVSS setup
@@ -230,10 +249,9 @@ pub fn encrypt_party_shares<R: RngCore + CryptoRng>(
 /// encrypt their shares. The result is a set of ciphertexts where
 /// ciphertexts[dealer][recipient] allows recipient to decrypt the
 /// share that dealer intended for them.
-pub fn encrypt_all_party_shares<R: RngCore + CryptoRng>(
+pub fn encrypt_all_party_shares(
     all_shares: &[Vec<u64>], // all_shares[dealer] = shares that dealer wants to distribute
     global_pk: &GlobalPublicKey,
-    rng: &mut R,
 ) -> Result<Vec<PvwCiphertext>> {
     if all_shares.len() != global_pk.params.n {
         return Err(PvwError::InvalidParameters(format!(
@@ -254,28 +272,26 @@ pub fn encrypt_all_party_shares<R: RngCore + CryptoRng>(
         }
     }
 
-    let mut ciphertexts = Vec::with_capacity(global_pk.params.n);
+    // Encrypt all party shares in parallel
+    let ciphertexts: Result<Vec<PvwCiphertext>> = all_shares
+        .par_iter()
+        .enumerate()
+        .map(|(dealer_idx, dealer_shares)| {
+            encrypt_party_shares(dealer_shares, dealer_idx, global_pk)
+        })
+        .collect();
 
-    for (dealer_idx, dealer_shares) in all_shares.iter().enumerate() {
-        let ct = encrypt_party_shares(dealer_shares, dealer_idx, global_pk, rng)?;
-        ciphertexts.push(ct);
-    }
-
-    Ok(ciphertexts)
+    ciphertexts
 }
 
 /// Encrypt a single scalar for all parties (broadcast encryption)
 ///
 /// Alternative encryption mode where the same value is encrypted for all parties.
 /// This can be useful for distributing public parameters or shared values.
-pub fn encrypt_broadcast<R: RngCore + CryptoRng>(
-    scalar: u64,
-    global_pk: &GlobalPublicKey,
-    rng: &mut R,
-) -> Result<PvwCiphertext> {
+pub fn encrypt_broadcast(scalar: u64, global_pk: &GlobalPublicKey) -> Result<PvwCiphertext> {
     let broadcast_values = vec![scalar; global_pk.params.n];
 
-    encrypt(&broadcast_values, global_pk, rng)
+    encrypt(&broadcast_values, global_pk)
 }
 
 /// Validate encoding correctness by checking the gadget structure
@@ -356,9 +372,7 @@ mod tests {
         let mut global_pk = GlobalPublicKey::new(crs);
 
         // Generate all public keys
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         (params, global_pk, parties)
     }
@@ -366,10 +380,9 @@ mod tests {
     #[test]
     fn test_basic_encryption() {
         let (params, global_pk, _parties) = setup_test_system();
-        let mut rng = thread_rng();
 
         let scalars = vec![10, 20, 30];
-        let ciphertext = encrypt(&scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&scalars, &global_pk).unwrap();
 
         assert!(ciphertext.validate().is_ok());
         assert_eq!(ciphertext.len(), params.n);
@@ -380,10 +393,9 @@ mod tests {
     #[test]
     fn test_party_shares_encryption() {
         let (_params, global_pk, _parties) = setup_test_system();
-        let mut rng = thread_rng();
 
         let party_shares = vec![100, 200, 300];
-        let ciphertext = encrypt_party_shares(&party_shares, 0, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt_party_shares(&party_shares, 0, &global_pk).unwrap();
 
         assert!(ciphertext.validate().is_ok());
         assert_eq!(ciphertext.len(), party_shares.len());
@@ -392,7 +404,6 @@ mod tests {
     #[test]
     fn test_all_party_shares_encryption() {
         let (params, global_pk, _parties) = setup_test_system();
-        let mut rng = thread_rng();
 
         let all_shares = vec![
             vec![11, 12, 13], // Party 0's shares
@@ -400,7 +411,7 @@ mod tests {
             vec![31, 32, 33], // Party 2's shares
         ];
 
-        let ciphertexts = encrypt_all_party_shares(&all_shares, &global_pk, &mut rng).unwrap();
+        let ciphertexts = encrypt_all_party_shares(&all_shares, &global_pk).unwrap();
 
         assert_eq!(ciphertexts.len(), params.n);
         for ct in &ciphertexts {
@@ -412,10 +423,9 @@ mod tests {
     #[test]
     fn test_broadcast_encryption() {
         let (params, global_pk, _parties) = setup_test_system();
-        let mut rng = thread_rng();
 
         let broadcast_value = 999;
-        let ciphertext = encrypt_broadcast(broadcast_value, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt_broadcast(broadcast_value, &global_pk).unwrap();
 
         assert!(ciphertext.validate().is_ok());
         assert_eq!(ciphertext.len(), params.n);
@@ -433,10 +443,9 @@ mod tests {
     #[test]
     fn test_ciphertext_access_methods() {
         let (_params, global_pk, _parties) = setup_test_system();
-        let mut rng = thread_rng();
 
         let scalars = vec![1, 2, 3];
-        let ciphertext = encrypt(&scalars, &global_pk, &mut rng).unwrap();
+        let ciphertext = encrypt(&scalars, &global_pk).unwrap();
 
         // Test access methods
         assert_eq!(ciphertext.c1_components().len(), global_pk.params.k);
@@ -453,16 +462,15 @@ mod tests {
     #[test]
     fn test_invalid_inputs() {
         let (_params, global_pk, _parties) = setup_test_system();
-        let mut rng = thread_rng();
 
         // Wrong number of scalars
         let wrong_scalars = vec![1, 2]; // Should be 3
-        let result = encrypt(&wrong_scalars, &global_pk, &mut rng);
+        let result = encrypt(&wrong_scalars, &global_pk);
         assert!(result.is_err());
 
         // Invalid party index
         let party_shares = vec![1, 2, 3];
-        let result = encrypt_party_shares(&party_shares, 999, &global_pk, &mut rng);
+        let result = encrypt_party_shares(&party_shares, 999, &global_pk);
         assert!(result.is_err());
 
         // Wrong number of shares per party
@@ -471,7 +479,7 @@ mod tests {
             vec![3, 4, 5], // Correct length
             vec![6, 7, 8], // Correct length
         ];
-        let result = encrypt_all_party_shares(&wrong_all_shares, &global_pk, &mut rng);
+        let result = encrypt_all_party_shares(&wrong_all_shares, &global_pk);
         assert!(result.is_err());
     }
 
@@ -495,12 +503,10 @@ mod tests {
 
         let crs = PvwCrs::new(&params, &mut rng).unwrap();
         let mut global_pk = GlobalPublicKey::new(crs);
-        global_pk
-            .generate_all_party_keys(&parties, &mut rng)
-            .unwrap();
+        global_pk.generate_all_party_keys(&parties).unwrap();
 
         let scalars = vec![1, 2, 3];
-        let _ciphertext = encrypt(&scalars, &global_pk, &mut rng).unwrap();
+        let _ciphertext = encrypt(&scalars, &global_pk).unwrap();
         // Should print warning about correctness condition
     }
 }
