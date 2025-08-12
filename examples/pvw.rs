@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
 
     // Configuration
-    let num_parties = 4;
+    let num_parties = 10;
     let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
 
     // Get parameters that satisfy correctness condition
@@ -38,8 +38,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Build PVW parameters
     let params = PvwParametersBuilder::new()
         .set_parties(num_parties)
-        .set_dimension(4)
-        .set_l(8)
+        .set_dimension(32)
+        .set_l(16)
         .set_moduli(&moduli)
         .set_secret_variance(suggested_variance)
         .set_error_bounds_u32(suggested_bound1, suggested_bound2)
@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut all_party_vectors = Vec::new();
     for party_id in 0..num_parties {
         let party_vector: Vec<u64> = (1..=num_parties)
-            .map(|j| (party_id * 10 + j) as u64)
+            .map(|j| (party_id * 10000 + j) as u64)
             .collect();
         all_party_vectors.push(party_vector);
     }

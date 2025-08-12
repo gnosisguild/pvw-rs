@@ -268,16 +268,9 @@ fn extract_constant_term_as_u64(poly: &Poly, params: &PvwParameters) -> Result<u
         // Handle negative values by taking modular equivalent
         let q_total = BigInt::from(params.q_total());
         let positive_equiv = (&constant_bigint + &q_total) % &q_total;
-        if positive_equiv <= BigInt::from(1000u64) {
             positive_equiv.to_u64().unwrap_or(0)
-        } else {
-            0
-        }
-    } else if constant_bigint <= BigInt::from(1000u64) {
-        constant_bigint.to_u64().unwrap_or(0)
     } else {
-        // Too large, likely noise dominating
-        0
+        constant_bigint.to_u64().unwrap_or(0)
     };
 
     Ok(plaintext_u64)
