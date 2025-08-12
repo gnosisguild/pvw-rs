@@ -28,18 +28,20 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Configuration
     let num_parties = 10;
+    let ring_degree = 16; // Must be a power of two
+    let dimension = 32;
     let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
 
     // Get parameters that satisfy correctness condition
     let (suggested_variance, suggested_bound1, suggested_bound2) =
-        PvwParameters::suggest_correct_parameters(num_parties, 4, 8, &moduli)
+        PvwParameters::suggest_correct_parameters(num_parties, dimension, ring_degree, &moduli)
             .unwrap_or((1, 50, 100));
 
     // Build PVW parameters
     let params = PvwParametersBuilder::new()
         .set_parties(num_parties)
-        .set_dimension(32)
-        .set_l(16)
+        .set_dimension(dimension)
+        .set_l(ring_degree)
         .set_moduli(&moduli)
         .set_secret_variance(suggested_variance)
         .set_error_bounds_u32(suggested_bound1, suggested_bound2)
