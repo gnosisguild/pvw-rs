@@ -239,13 +239,7 @@ fn extract_constant_term_as_u64(poly: &Poly, params: &PvwParameters) -> Result<u
             positive_equiv.to_u64().unwrap_or(0)
         }
     } else {
-        // Positive values - directly convert with bounds checking
-        if constant_bigint > BigInt::from(u64::MAX) {
-            // Value too large, might be noise
-            0u64
-        } else {
-            constant_bigint.to_u64().unwrap_or(0)
-        }
+        constant_bigint.to_u64().unwrap_or(0)
     };
 
     Ok(plaintext_u64)
