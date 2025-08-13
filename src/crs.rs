@@ -277,10 +277,6 @@ mod tests {
 
         let (variance, bound1, bound2) =
             PvwParameters::suggest_correct_parameters(30, 64, 32, &moduli).unwrap_or((1, 50, 100));
-        println!(
-            "bound1 = {:?}, bound2 = {:?}, variance = {:?}",
-            bound1, bound2, variance
-        );
 
         PvwParametersBuilder::new()
             .set_parties(30)
