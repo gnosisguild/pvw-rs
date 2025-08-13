@@ -185,14 +185,13 @@ fn divide_by_delta_rns(poly: &Poly, delta_poly: &Poly, params: &PvwParameters) -
     } else {
         // Compute quotient with proper rounding
         let twice_poly = &poly_const * 2;
-        let rounded_quotient = if poly_const.is_negative() {
+        if poly_const.is_negative() {
             // For negative numbers: (2*poly - delta) / (2*delta)
             (&twice_poly - &delta_const) / (&delta_const * 2)
         } else {
             // For positive numbers: (2*poly + delta) / (2*delta)
             (&twice_poly + &delta_const) / (&delta_const * 2)
-        };
-        rounded_quotient
+        }
     };
 
     let mut quotient_coeffs = vec![BigInt::zero(); params.l];
@@ -401,7 +400,7 @@ mod tests {
         }
 
         let success_rate = (total_correct as f64 / total_values as f64) * 100.0;
-        println!("Decryption success rate: {:.1}%", success_rate);
+        println!("Decryption success rate: {success_rate:.1}%");
 
         // Should have high success rate
         assert!(
@@ -430,8 +429,7 @@ mod tests {
 
             assert_eq!(
                 rounded_quotient, expected,
-                "Rounding division failed: {} / {} should be {}, got {}",
-                dividend, divisor, expected, rounded_quotient
+                "Rounding division failed: {dividend} / {divisor} should be {expected}, got {rounded_quotient}"
             );
         }
     }
