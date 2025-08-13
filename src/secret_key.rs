@@ -217,8 +217,7 @@ impl SecretKey {
     /// Check if coefficients are within expected CBD bounds
     ///
     /// Validates that all coefficients fall within the expected range
-    /// for the configured CBD variance. This helps detect corruption
-    /// or incorrect parameter usage.
+    /// for the configured CBD variance. This helps detect incorrect parameter usage.
     ///
     /// # Returns
     /// Ok(()) if all coefficients are within bounds, Err with details if not
@@ -310,12 +309,12 @@ mod tests {
     /// Create PVW parameters for testing with moderate security settings
     fn create_test_params() -> Arc<PvwParameters> {
         PvwParametersBuilder::new()
-            .set_parties(3)
+            .set_parties(20)
             .set_dimension(4)
             .set_l(8)
             .set_moduli(&test_moduli())
             .set_secret_variance(1)
-            .set_error_bounds_u32(100, 200)
+            .set_error_bounds_u32(1000, 2000)
             .build_arc()
             .unwrap()
     }
@@ -328,8 +327,8 @@ mod tests {
             PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli).unwrap_or((1, 50, 100));
 
         PvwParametersBuilder::new()
-            .set_parties(3)
-            .set_dimension(4)
+            .set_parties(20)
+            .set_dimension(2048)
             .set_l(8)
             .set_moduli(&moduli)
             .set_secret_variance(variance)
@@ -355,6 +354,10 @@ mod tests {
         for coeffs in &sk.secret_coeffs {
             assert_eq!(coeffs.len(), params.l);
         }
+
+        // Ensure the secret key is not the all-zero vector
+        let has_nonzero = sk.secret_coeffs.iter().flatten().any(|&c| c != 0);
+        assert!(has_nonzero, "Secret key coefficients are all zero");
 
         println!("✓ Secret key generation test passed");
     }
