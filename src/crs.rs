@@ -277,7 +277,10 @@ mod tests {
 
         let (variance, bound1, bound2) =
             PvwParameters::suggest_correct_parameters(30, 64, 32, &moduli).unwrap_or((1, 50, 100));
-        println!("bound1 = {:?}, bound2 = {:?}, variance = {:?}", bound1, bound2, variance);
+        println!(
+            "bound1 = {:?}, bound2 = {:?}, variance = {:?}",
+            bound1, bound2, variance
+        );
 
         PvwParametersBuilder::new()
             .set_parties(30)
@@ -330,20 +333,19 @@ mod tests {
         let crs1 = PvwCrs::new_deterministic(&params, seed).unwrap();
         let crs2 = PvwCrs::new_deterministic(&params, seed).unwrap();
 
-
         // Same seed should produce identical CRS structure
         assert_eq!(crs1.dimensions(), crs2.dimensions());
         assert!(crs1.validate().is_ok());
         assert!(crs2.validate().is_ok());
 
-        // Same seed should produce identical CRS 
+        // Same seed should produce identical CRS
         let (rows, cols) = crs1.matrix.dim();
         for i in 0..rows {
-                for j in 0..cols {
-                    let p1 = &crs1.matrix[(i, j)];
-                    let p2 = &crs2.matrix[(i, j)];
+            for j in 0..cols {
+                let p1 = &crs1.matrix[(i, j)];
+                let p2 = &crs2.matrix[(i, j)];
 
-                        assert_eq!(p1, p2, "Same seed produced different CRSs");
+                assert_eq!(p1, p2, "Same seed produced different CRSs");
             }
         }
 
@@ -352,18 +354,20 @@ mod tests {
         let mut any_diff = false;
 
         'outer: for i in 0..rows {
-        for j in 0..cols {
-            let p1: &Poly = &crs1.matrix[(i, j)];
-            let p2: &Poly = &crs3.matrix[(i, j)];
-            if p1 != p2 {
-                any_diff = true;
-                break 'outer;
+            for j in 0..cols {
+                let p1: &Poly = &crs1.matrix[(i, j)];
+                let p2: &Poly = &crs3.matrix[(i, j)];
+                if p1 != p2 {
+                    any_diff = true;
+                    break 'outer;
                 }
             }
         }
 
-
-        assert!(any_diff, "Different seeds produced identical CRS (all entries equal)");
+        assert!(
+            any_diff,
+            "Different seeds produced identical CRS (all entries equal)"
+        );
     }
 
     #[test]
@@ -377,36 +381,36 @@ mod tests {
         assert_eq!(crs1.dimensions(), crs2.dimensions());
         assert!(crs1.validate().is_ok());
         assert!(crs2.validate().is_ok());
-        
-        // Same seed should produce identical CRS 
+
+        // Same seed should produce identical CRS
         let (rows, cols) = crs1.matrix.dim();
         for i in 0..rows {
-                for j in 0..cols {
-                    let p1 = &crs1.matrix[(i, j)];
-                    let p2 = &crs2.matrix[(i, j)];
+            for j in 0..cols {
+                let p1 = &crs1.matrix[(i, j)];
+                let p2 = &crs2.matrix[(i, j)];
 
-                        assert_eq!(p1, p2, "Same seed produced different CRSs");
+                assert_eq!(p1, p2, "Same seed produced different CRSs");
             }
         }
 
-
-
-        // Different tags should produce different CRS 
+        // Different tags should produce different CRS
         let crs3 = PvwCrs::new_from_tag(&params, "different_tag").unwrap();
 
         let mut any_diff = false;
         'outer: for i in 0..rows {
-        for j in 0..cols {
-            let p1: &Poly = &crs1.matrix[(i, j)];
-            let p2: &Poly = &crs3.matrix[(i, j)];
-            if p1 != p2 {
-                any_diff = true;
-                break 'outer;
+            for j in 0..cols {
+                let p1: &Poly = &crs1.matrix[(i, j)];
+                let p2: &Poly = &crs3.matrix[(i, j)];
+                if p1 != p2 {
+                    any_diff = true;
+                    break 'outer;
                 }
             }
         }
-        assert!(any_diff, "Different seeds produced identical CRS (all entries equal)");
-
+        assert!(
+            any_diff,
+            "Different seeds produced identical CRS (all entries equal)"
+        );
     }
 
     #[test]

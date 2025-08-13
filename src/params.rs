@@ -521,7 +521,7 @@ impl PvwParameters {
     ///
     /// Note we are using this temporarily. For our case, we will have different conditions as we
     /// are not using the same protocol for the zk proofs.
-    
+
     pub fn verify_correctness_condition(&self) -> bool {
         use std::f64;
 
@@ -535,7 +535,7 @@ impl PvwParameters {
 
         // Calculate the first sqrt term: sqrt(l^2*k*n)
         let first_sqrt_term = if l * l * k * n > 0.0 {
-           (l * l * k * n).sqrt()
+            (l * l * k * n).sqrt()
         } else {
             f64::INFINITY
         };
@@ -545,11 +545,11 @@ impl PvwParameters {
         // Calculate the second term: error_bound_2 * (2.37/sqrt(n*l) + 1.7*n)
 
         let second_sqrt_term = if n * l > 0.0 {
-           (n * l).sqrt()
+            (n * l).sqrt()
         } else {
             f64::INFINITY
         };
-        let second_term = error_bound_2_f64 * ( 2.37 * second_sqrt_term + 1.7 * n);
+        let second_term = error_bound_2_f64 * (2.37 * second_sqrt_term + 1.7 * n);
 
         // Total bound
         let total_bound = first_term + second_term;
