@@ -70,6 +70,7 @@ impl PvwCrs {
     ///
     /// Creates a deterministic CRS that all parties can derive from a known string.
     /// Useful for PVSS where all participants need the same reference string.
+    /// TODO: operate over bytes instead of strings when hashing
     pub fn new_from_tag(params: &Arc<PvwParameters>, tag: &str) -> Result<Self> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
