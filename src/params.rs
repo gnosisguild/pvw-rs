@@ -614,9 +614,9 @@ mod tests {
 
         // Try different parameter combinations
         let test_cases = [
-            (3, 64, 8),   // Small parameters
-            (5, 128, 16), // Medium parameters
-            (7, 256, 32), // Larger parameters
+            (3, 8, 8),      // Small parameters
+            (10, 128, 16),  // Medium parameters
+            (50, 2048, 32), // Larger parameters
         ];
 
         for (n, k, l) in test_cases {

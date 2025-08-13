@@ -439,7 +439,7 @@ mod tests {
     fn create_test_params() -> Arc<PvwParameters> {
         PvwParametersBuilder::new()
             .set_parties(5)
-            .set_dimension(4)
+            .set_dimension(1024)
             .set_l(8)
             .set_moduli(&test_moduli())
             .set_secret_variance(1)
@@ -457,7 +457,7 @@ mod tests {
 
         PvwParametersBuilder::new()
             .set_parties(5)
-            .set_dimension(4)
+            .set_dimension(1024)
             .set_l(8)
             .set_moduli(&moduli)
             .set_secret_variance(variance)
