@@ -70,6 +70,7 @@ impl PvwCrs {
     ///
     /// Creates a deterministic CRS that all parties can derive from a known string.
     /// Useful for PVSS where all participants need the same reference string.
+    /// TODO: operate over bytes instead of strings when hashing
     pub fn new_from_tag(params: &Arc<PvwParameters>, tag: &str) -> Result<Self> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -276,12 +277,12 @@ mod tests {
         let moduli = test_moduli();
 
         let (variance, bound1, bound2) =
-            PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli).unwrap_or((1, 50, 100));
+            PvwParameters::suggest_correct_parameters(30, 64, 32, &moduli).unwrap_or((1, 50, 100));
 
         PvwParametersBuilder::new()
-            .set_parties(3)
-            .set_dimension(4)
-            .set_l(8)
+            .set_parties(30)
+            .set_dimension(64)
+            .set_l(32)
             .set_moduli(&moduli)
             .set_secret_variance(variance)
             .set_error_bounds_u32(bound1, bound2)
@@ -333,6 +334,37 @@ mod tests {
         assert_eq!(crs1.dimensions(), crs2.dimensions());
         assert!(crs1.validate().is_ok());
         assert!(crs2.validate().is_ok());
+
+        // Same seed should produce identical CRS
+        let (rows, cols) = crs1.matrix.dim();
+        for i in 0..rows {
+            for j in 0..cols {
+                let p1 = &crs1.matrix[(i, j)];
+                let p2 = &crs2.matrix[(i, j)];
+
+                assert_eq!(p1, p2, "Same seed produced different CRSs");
+            }
+        }
+
+        // Different seed should produce different CRS
+        let crs3 = PvwCrs::new_deterministic(&params, [1u8; 32]).unwrap();
+        let mut any_diff = false;
+
+        'outer: for i in 0..rows {
+            for j in 0..cols {
+                let p1: &Poly = &crs1.matrix[(i, j)];
+                let p2: &Poly = &crs3.matrix[(i, j)];
+                if p1 != p2 {
+                    any_diff = true;
+                    break 'outer;
+                }
+            }
+        }
+
+        assert!(
+            any_diff,
+            "Different seeds produced identical CRS (all entries equal)"
+        );
     }
 
     #[test]
@@ -347,9 +379,35 @@ mod tests {
         assert!(crs1.validate().is_ok());
         assert!(crs2.validate().is_ok());
 
-        // Different tags should produce different CRS (structurally same, different content)
+        // Same seed should produce identical CRS
+        let (rows, cols) = crs1.matrix.dim();
+        for i in 0..rows {
+            for j in 0..cols {
+                let p1 = &crs1.matrix[(i, j)];
+                let p2 = &crs2.matrix[(i, j)];
+
+                assert_eq!(p1, p2, "Same seed produced different CRSs");
+            }
+        }
+
+        // Different tags should produce different CRS
         let crs3 = PvwCrs::new_from_tag(&params, "different_tag").unwrap();
-        assert_eq!(crs1.dimensions(), crs3.dimensions());
+
+        let mut any_diff = false;
+        'outer: for i in 0..rows {
+            for j in 0..cols {
+                let p1: &Poly = &crs1.matrix[(i, j)];
+                let p2: &Poly = &crs3.matrix[(i, j)];
+                if p1 != p2 {
+                    any_diff = true;
+                    break 'outer;
+                }
+            }
+        }
+        assert!(
+            any_diff,
+            "Different seeds produced identical CRS (all entries equal)"
+        );
     }
 
     #[test]
@@ -446,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_different_parameter_sizes() {
-        let test_cases = vec![(1, 8), (2, 8), (4, 16)];
+        let test_cases = vec![(1, 8), (2, 8), (4, 16), (128, 8), (1024, 8)];
 
         let mut rng = thread_rng();
 

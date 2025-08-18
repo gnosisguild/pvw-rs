@@ -27,19 +27,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
 
     // Configuration
-    let num_parties = 4;
+    let num_parties = 7;
+    let ring_degree = 8; // Must be a power of two
+    let dimension = 32;
+
     let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
+    //let moduli = vec![0xffffc4001u64, 0x1ffffe0001u64];
+    //let moduli = vec![0x1ffffffe88001, 0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
 
     // Get parameters that satisfy correctness condition
     let (suggested_variance, suggested_bound1, suggested_bound2) =
-        PvwParameters::suggest_correct_parameters(num_parties, 4, 8, &moduli)
+        PvwParameters::suggest_correct_parameters(num_parties, dimension, ring_degree, &moduli)
             .unwrap_or((1, 50, 100));
 
     // Build PVW parameters
     let params = PvwParametersBuilder::new()
         .set_parties(num_parties)
-        .set_dimension(4)
-        .set_l(8)
+        .set_dimension(dimension)
+        .set_l(ring_degree)
         .set_moduli(&moduli)
         .set_secret_variance(suggested_variance)
         .set_error_bounds_u32(suggested_bound1, suggested_bound2)
@@ -49,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("⚙️  {}", style("PVW Parameters:").blue().bold());
     println!(
         "  • Parties: {}, Dimension: {}, Ring degree: {}",
-        params.n, 4, params.l
+        params.n, params.k, params.l
     );
     println!(
         "  • Delta (Δ): {}, Modulus bits: {}",
@@ -86,7 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut all_party_vectors = Vec::new();
     for party_id in 0..num_parties {
         let party_vector: Vec<u64> = (1..=num_parties)
-            .map(|j| (party_id * 10 + j) as u64)
+            .map(|j| (party_id * 1000 + j) as u64)
             .collect();
         all_party_vectors.push(party_vector);
     }
@@ -240,7 +245,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
 
     // Final status
-    if success_rate >= 95.0 {
+    if success_rate == 100.0 {
         println!(
             "🎉 {}",
             style("SUCCESS: PVSS working perfectly!").green().bold()

@@ -517,7 +517,10 @@ impl PvwParameters {
     }
 
     /// Verify the PVW correctness condition:
-    /// delta_power_l_minus_1 > error_bound_1 * (24/sqrt(l^2*k*n + 31.8*k*l)) + error_bound_2 * (2.37/sqrt(n*l) + 1.7*n)
+    /// delta_power_l_minus_1 > error_bound_1 * (24 * sqrt(l^2*k*n) + 31.8*k*l) + error_bound_2 * (2.37 * sqrt(n*l) + 1.7*n)
+    ///
+    /// Note we are using this temporarily. For our case, we will have different conditions as we
+    /// are not using the same protocol for the zk proofs.
     pub fn verify_correctness_condition(&self) -> bool {
         use std::f64;
 
@@ -529,21 +532,23 @@ impl PvwParameters {
         let error_bound_1_f64 = self.error_bound_1.to_f64().unwrap_or(f64::INFINITY);
         let error_bound_2_f64 = self.error_bound_2.to_f64().unwrap_or(f64::INFINITY);
 
-        // Calculate the first term: error_bound_1 * (24/sqrt(l^2*k*n + 31.8*k*l))
-        let first_denominator = l * l * k * n + 31.8 * k * l;
-        let first_term = if first_denominator > 0.0 {
-            error_bound_1_f64 * (24.0 / first_denominator.sqrt())
+        // Calculate the first sqrt term: sqrt(l^2*k*n)
+        let first_sqrt_term = if l * l * k * n > 0.0 {
+            (l * l * k * n).sqrt()
         } else {
             f64::INFINITY
         };
 
+        let first_term = error_bound_1_f64 * (24.0 * first_sqrt_term + 31.8 * k * l);
+
         // Calculate the second term: error_bound_2 * (2.37/sqrt(n*l) + 1.7*n)
+
         let second_sqrt_term = if n * l > 0.0 {
-            2.37 / (n * l).sqrt()
+            (n * l).sqrt()
         } else {
             f64::INFINITY
         };
-        let second_term = error_bound_2_f64 * (second_sqrt_term + 1.7 * n);
+        let second_term = error_bound_2_f64 * (2.37 * second_sqrt_term + 1.7 * n);
 
         // Total bound
         let total_bound = first_term + second_term;
@@ -578,14 +583,14 @@ impl PvwParameters {
         let k_f64 = k as f64;
         let l_f64 = l as f64;
 
-        let coeff1 = 24.0 / (l_f64 * l_f64 * k_f64 * n_f64 + 31.8 * k_f64 * l_f64).sqrt();
-        let coeff2 = 2.37 / (n_f64 * l_f64).sqrt() + 1.7 * n_f64;
+        let coeff1 = 24.0 * (l_f64 * l_f64 * k_f64 * n_f64).sqrt() + 31.8 * k_f64 * l_f64;
+        let coeff2 = 2.37 * (n_f64 * l_f64).sqrt() + 1.7 * n_f64 * l_f64;
 
         // Start with small bounds and check if they work
-        for error_bound_1 in [100, 200, 500, 1000, 2000, 5000] {
-            for error_bound_2 in [100, 200, 500, 1000, 2000, 5000] {
+        for error_bound_1 in [100, 200, 500, 1000, 2000, 5000].into_iter().rev() {
+            for error_bound_2 in [100, 200, 500, 1000, 2000, 5000].into_iter().rev() {
                 let total_bound = error_bound_1 as f64 * coeff1 + error_bound_2 as f64 * coeff2;
-                if delta_power_f64 > total_bound * 2.0 {
+                if delta_power_f64 > total_bound {
                     // Add safety margin
                     return Ok((1, error_bound_1, error_bound_2));
                 }
@@ -609,9 +614,9 @@ mod tests {
 
         // Try different parameter combinations
         let test_cases = [
-            (3, 64, 8),   // Small parameters
-            (5, 128, 16), // Medium parameters
-            (7, 256, 32), // Larger parameters
+            (3, 8, 8),      // Small parameters
+            (10, 128, 16),  // Medium parameters
+            (50, 2048, 32), // Larger parameters
         ];
 
         for (n, k, l) in test_cases {
