@@ -16,7 +16,6 @@ use pvw::{
     PvwParameters,
 };
 use rand::{rngs::OsRng, seq::SliceRandom};
-use rayon::prelude::*;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -131,14 +130,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut dealer_indices: Vec<usize> = (0..num_parties).collect();
     dealer_indices.shuffle(&mut rng);
     let selected_dealers: Vec<usize> = dealer_indices.into_iter().take(threshold).collect();
-    
+
     println!(
         "🎯 {}",
         style("Selected dealers for threshold decryption (same for all parties):")
             .blue()
             .bold()
     );
-    println!("    Using {} out of {} dealers: {:?}", threshold, num_parties, selected_dealers);
+    println!("    Using {threshold} out of {num_parties} dealers: {selected_dealers:?}");
     println!("    All parties will decrypt from these same dealers");
     println!();
 
@@ -152,28 +151,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     let start_decrypt = std::time::Instant::now();
 
     // Collect all secret keys
-    let all_keys: Vec<&pvw::secret_key::SecretKey> = parties
-        .iter()
-        .map(|party| &party.secret_key)
-        .collect();
+    let all_keys: Vec<&pvw::secret_key::SecretKey> =
+        parties.iter().map(|party| &party.secret_key).collect();
 
     // All parties decrypt the same set of t ciphertexts
-    let threshold_shares_only = decryption::decrypt_threshold_party_shares(
-        &selected_ciphertexts,
-        &all_keys,
-        threshold,
-    )?;
+    let threshold_shares_only =
+        decryption::decrypt_threshold_party_shares(&selected_ciphertexts, &all_keys, threshold)?;
 
     let decryption_time = start_decrypt.elapsed();
 
-    println!("✅ {}", style("Threshold decryption completed successfully!").green().bold());
-    println!("    All parties decrypted the same {} ciphertexts", threshold);
+    println!(
+        "✅ {}",
+        style("Threshold decryption completed successfully!")
+            .green()
+            .bold()
+    );
+    println!("    All parties decrypted the same {threshold} ciphertexts");
     println!();
 
     // Count correct threshold decryptions using the shares-only data
     let mut threshold_correct = 0;
     let mut threshold_total = 0;
-    for (recipient_party_index, party_threshold_shares) in threshold_shares_only.iter().enumerate() {
+    for (recipient_party_index, party_threshold_shares) in threshold_shares_only.iter().enumerate()
+    {
         for (share_idx, &decrypted_value) in party_threshold_shares.iter().enumerate() {
             let dealer_idx = selected_dealers[share_idx]; // Map back to dealer using selected_dealers order
             let expected_value = all_party_vectors[dealer_idx][recipient_party_index];
@@ -191,9 +191,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             .blue()
             .bold()
     );
-    println!("    Each party's {} shares from dealers {:?}", threshold, selected_dealers);
+    println!("    Each party's {threshold} shares from dealers {selected_dealers:?}");
     println!();
-    
+
     for (recipient_id, shares) in threshold_shares_only.iter().enumerate() {
         print!("P{recipient_id}: ");
         for &share in shares {
@@ -204,7 +204,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
 
     // Verify threshold shares using shares-only data
-    println!("🔍 {}", style("Threshold Share Verification:").blue().bold());
+    println!(
+        "🔍 {}",
+        style("Threshold Share Verification:").blue().bold()
+    );
     let mut threshold_verification_details = Vec::new();
     for (recipient_party_index, threshold_shares) in threshold_shares_only.iter().enumerate() {
         for (share_idx, &decrypted_value) in threshold_shares.iter().enumerate() {
@@ -250,9 +253,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "  • Encryption time: {encryption_time:?} ({:?} avg per dealer)",
         encryption_time / num_parties as u32
     );
-    println!(
-        "  • Threshold decryption time: {decryption_time:?} (single call for all parties)",
-    );
+    println!("  • Threshold decryption time: {decryption_time:?} (single call for all parties)",);
     println!(
         "  • Efficiency: {threshold_total} threshold decrypt operations vs {} full operations",
         num_parties * num_parties
@@ -264,8 +265,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
 
     // Demonstration: Show what full decryption would have given us
-    println!("🔄 {}", style("Comparison with Full Decryption:").blue().bold());
-    
+    println!(
+        "🔄 {}",
+        style("Comparison with Full Decryption:").blue().bold()
+    );
+
     // For comparison, also do full decryption on one party
     let comparison_party_idx = 0;
     let full_shares = decryption::decrypt_party_shares(
@@ -274,32 +278,31 @@ fn main() -> Result<(), Box<dyn Error>> {
         comparison_party_idx,
     )?;
     let threshold_shares = &threshold_shares_only[comparison_party_idx];
-    
+
     println!("  Party {comparison_party_idx} comparison:");
-    print!("    Full decryption ({} shares):      ", num_parties);
+    print!("    Full decryption ({num_parties} shares):      ");
     for &share in &full_shares {
         print!("{share:>6} ");
     }
     println!();
-    
-    print!("    Threshold decryption ({} shares): ", threshold);
+
+    print!("    Threshold decryption ({threshold} shares): ");
     for &share in threshold_shares {
         print!("{share:>6} ");
     }
     println!();
-    println!("    (Threshold shares are from dealers: {:?})", selected_dealers);
+    println!("    (Threshold shares are from dealers: {selected_dealers:?})");
     println!();
 
     // Final status
     if threshold_success_rate == 100.0 {
         println!(
             "🎉 {}",
-            style("SUCCESS: Threshold PVSS working perfectly!").green().bold()
+            style("SUCCESS: Threshold PVSS working perfectly!")
+                .green()
+                .bold()
         );
-        println!(
-            "    Each party received exactly their shares from {} selected dealers.",
-            threshold
-        );
+        println!("    Each party received exactly their shares from {threshold} selected dealers.");
         println!("    Dealer indices are preserved for later reconstruction.");
     } else if threshold_success_rate >= 80.0 {
         println!(
@@ -311,7 +314,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     } else {
         println!(
             "⚠️  {}",
-            style("NEEDS ATTENTION: Low threshold success rate").red().bold()
+            style("NEEDS ATTENTION: Low threshold success rate")
+                .red()
+                .bold()
         );
     }
 

@@ -324,7 +324,7 @@ pub fn decrypt_party_shares(
 }
 
 // Decrypt threshold shares for all parties
-/// 
+///
 /// Decrypts the same set of t ciphertexts for all parties and returns just the shares.
 /// This function ensures all parties decrypt the same ciphertext subset by taking
 /// the selected ciphertexts as input and applying them uniformly to all parties.
@@ -336,22 +336,6 @@ pub fn decrypt_party_shares(
 ///
 /// # Returns
 /// * `Result<Vec<Vec<u64>>>` - Decrypted shares: `result[party_idx][share_idx]`
-/// 
-/// # Example
-/// ```rust
-/// // Select t ciphertexts
-/// let selected = &all_ciphertexts[0..threshold];
-/// let all_keys: Vec<&SecretKey> = parties.iter().map(|p| &p.secret_key).collect();
-/// 
-/// // Decrypt for all parties
-/// let all_party_shares = decrypt_threshold_party_shares(
-///     selected,
-///     &all_keys,
-///     threshold
-/// )?;
-/// 
-/// // all_party_shares[party_idx][share_idx] = decrypted_share
-/// ```
 pub fn decrypt_threshold_party_shares(
     selected_ciphertexts: &[PvwCiphertext],
     all_secret_keys: &[&SecretKey],
@@ -362,7 +346,7 @@ pub fn decrypt_threshold_party_shares(
             "No ciphertexts provided".to_string(),
         ));
     }
-    
+
     if all_secret_keys.is_empty() {
         return Err(PvwError::InvalidParameters(
             "No secret keys provided".to_string(),
@@ -370,7 +354,7 @@ pub fn decrypt_threshold_party_shares(
     }
 
     let params = &selected_ciphertexts[0].params;
-    
+
     // Validate threshold
     if selected_ciphertexts.len() != threshold {
         return Err(PvwError::InvalidParameters(format!(
@@ -384,8 +368,7 @@ pub fn decrypt_threshold_party_shares(
     if threshold > params.n {
         return Err(PvwError::InvalidParameters(format!(
             "Threshold {} cannot exceed total parties {}",
-            threshold,
-            params.n
+            threshold, params.n
         )));
     }
 
@@ -411,14 +394,13 @@ pub fn decrypt_threshold_party_shares(
                 .map(|(idx, ciphertext)| {
                     // Validate ciphertext
                     ciphertext.validate().map_err(|e| {
-                        PvwError::InvalidParameters(format!("Ciphertext {} invalid: {e}", idx))
+                        PvwError::InvalidParameters(format!("Ciphertext {idx} invalid: {e}"))
                     })?;
 
                     // Ensure all ciphertexts use compatible parameters
                     if !std::sync::Arc::ptr_eq(&ciphertext.params, params) {
                         return Err(PvwError::InvalidParameters(format!(
-                            "Ciphertext {} has different parameters",
-                            idx
+                            "Ciphertext {idx} has different parameters"
                         )));
                     }
 
