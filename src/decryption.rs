@@ -323,6 +323,116 @@ pub fn decrypt_party_shares(
     results
 }
 
+// Decrypt threshold shares for all parties
+/// 
+/// Decrypts the same set of t ciphertexts for all parties and returns just the shares.
+/// This function ensures all parties decrypt the same ciphertext subset by taking
+/// the selected ciphertexts as input and applying them uniformly to all parties.
+///
+/// # Arguments
+/// * `selected_ciphertexts` - The t selected ciphertexts (same for all parties)
+/// * `all_secret_keys` - Secret keys for all parties
+/// * `threshold` - The threshold value `t` (must match number of ciphertexts)
+///
+/// # Returns
+/// * `Result<Vec<Vec<u64>>>` - Decrypted shares: `result[party_idx][share_idx]`
+/// 
+/// # Example
+/// ```rust
+/// // Select t ciphertexts
+/// let selected = &all_ciphertexts[0..threshold];
+/// let all_keys: Vec<&SecretKey> = parties.iter().map(|p| &p.secret_key).collect();
+/// 
+/// // Decrypt for all parties
+/// let all_party_shares = decrypt_threshold_party_shares(
+///     selected,
+///     &all_keys,
+///     threshold
+/// )?;
+/// 
+/// // all_party_shares[party_idx][share_idx] = decrypted_share
+/// ```
+pub fn decrypt_threshold_party_shares(
+    selected_ciphertexts: &[PvwCiphertext],
+    all_secret_keys: &[&SecretKey],
+    threshold: usize,
+) -> Result<Vec<Vec<u64>>> {
+    if selected_ciphertexts.is_empty() {
+        return Err(PvwError::InvalidParameters(
+            "No ciphertexts provided".to_string(),
+        ));
+    }
+    
+    if all_secret_keys.is_empty() {
+        return Err(PvwError::InvalidParameters(
+            "No secret keys provided".to_string(),
+        ));
+    }
+
+    let params = &selected_ciphertexts[0].params;
+    
+    // Validate threshold
+    if selected_ciphertexts.len() != threshold {
+        return Err(PvwError::InvalidParameters(format!(
+            "Expected exactly {} ciphertexts for threshold {}, got {}",
+            threshold,
+            threshold,
+            selected_ciphertexts.len()
+        )));
+    }
+
+    if threshold > params.n {
+        return Err(PvwError::InvalidParameters(format!(
+            "Threshold {} cannot exceed total parties {}",
+            threshold,
+            params.n
+        )));
+    }
+
+    // Validate we have the right number of secret keys
+    if all_secret_keys.len() != params.n {
+        return Err(PvwError::InvalidParameters(format!(
+            "Expected {} secret keys for {} parties, got {}",
+            params.n,
+            params.n,
+            all_secret_keys.len()
+        )));
+    }
+
+    // Decrypt threshold shares for all parties directly
+    let results: Result<Vec<Vec<u64>>> = all_secret_keys
+        .par_iter()
+        .enumerate()
+        .map(|(party_index, secret_key)| {
+            // Decrypt each selected ciphertext for this party
+            let party_shares: Result<Vec<u64>> = selected_ciphertexts
+                .iter()
+                .enumerate()
+                .map(|(idx, ciphertext)| {
+                    // Validate ciphertext
+                    ciphertext.validate().map_err(|e| {
+                        PvwError::InvalidParameters(format!("Ciphertext {} invalid: {e}", idx))
+                    })?;
+
+                    // Ensure all ciphertexts use compatible parameters
+                    if !std::sync::Arc::ptr_eq(&ciphertext.params, params) {
+                        return Err(PvwError::InvalidParameters(format!(
+                            "Ciphertext {} has different parameters",
+                            idx
+                        )));
+                    }
+
+                    decrypt_party_value(ciphertext, secret_key, party_index)
+                })
+                .collect();
+
+            party_shares
+        })
+        .collect();
+
+    results
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
