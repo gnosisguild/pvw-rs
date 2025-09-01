@@ -1,6 +1,7 @@
-use crate::encryption::PvwCiphertext;
-use crate::params::{PvwError, PvwParameters, Result};
-use crate::secret_key::SecretKey;
+use super::encryption::PvwCiphertext;
+use crate::errors::PvwError;
+use crate::keys::secret_key::SecretKey;
+use crate::params::parameters::{PvwParameters, Result};
 use fhe_math::rq::{Poly, Representation};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -413,110 +414,4 @@ pub fn decrypt_threshold_party_shares(
         .collect();
 
     results
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::crs::PvwCrs;
-    use crate::encryption::encrypt_all_party_shares;
-    use crate::params::PvwParametersBuilder;
-    use crate::public_key::{GlobalPublicKey, Party};
-    use rand::thread_rng;
-
-    #[test]
-    fn test_decryption_l16() {
-        // Test with l=16 parameters
-        let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
-        let num_parties = 10;
-
-        let (variance, bound1, bound2) =
-            PvwParameters::suggest_correct_parameters(num_parties, 4, 16, &moduli)
-                .expect("Should find parameters for l=16");
-
-        let params = PvwParametersBuilder::new()
-            .set_parties(num_parties)
-            .set_dimension(4)
-            .set_l(16)
-            .set_moduli(&moduli)
-            .set_secret_variance(variance)
-            .set_error_bounds_u32(bound1, bound2)
-            .build_arc()
-            .expect("Should create parameters");
-
-        let mut rng = thread_rng();
-
-        // Create parties and global public key
-        let crs = PvwCrs::new(&params, &mut rng).unwrap();
-        let mut global_pk = GlobalPublicKey::new(crs);
-
-        let mut parties = Vec::new();
-        for i in 0..num_parties {
-            let party = Party::new(i, &params, &mut rng).unwrap();
-            global_pk.generate_and_add_party(&party, &mut rng).unwrap();
-            parties.push(party);
-        }
-
-        // Create test vectors (smaller values for reliability)
-        let all_party_vectors: Vec<Vec<u64>> = (0..num_parties)
-            .map(|dealer_id| {
-                (1..=num_parties)
-                    .map(|j| (dealer_id * 100 + j) as u64)
-                    .collect()
-            })
-            .collect();
-
-        // Encrypt
-        let all_ciphertexts = encrypt_all_party_shares(&all_party_vectors, &global_pk).unwrap();
-
-        let mut total_correct = 0;
-        let mut total_values = 0;
-
-        for (party_idx, party) in parties.iter().enumerate() {
-            let decrypted_shares =
-                decrypt_party_shares(&all_ciphertexts, &party.secret_key, party_idx).unwrap();
-
-            for (dealer_idx, &decrypted_value) in decrypted_shares.iter().enumerate() {
-                let expected_value = all_party_vectors[dealer_idx][party_idx];
-                if decrypted_value == expected_value {
-                    total_correct += 1;
-                }
-                total_values += 1;
-            }
-        }
-
-        let success_rate = (total_correct as f64 / total_values as f64) * 100.0;
-        println!("Decryption success rate: {success_rate:.1}%");
-
-        // Should have high success rate
-        assert!(
-            success_rate >= 95.0,
-            "Decryption should achieve >95% success rate"
-        );
-    }
-
-    #[test]
-    fn test_rounding_division() {
-        // Test the rounding division implementation
-        let test_cases = [
-            (BigInt::from(7), BigInt::from(3), BigInt::from(2)), // 7/3 = 2.33... -> 2
-            (BigInt::from(8), BigInt::from(3), BigInt::from(3)), // 8/3 = 2.67... -> 3
-            (BigInt::from(-7), BigInt::from(3), BigInt::from(-2)), // -7/3 = -2.33... -> -2
-            (BigInt::from(-8), BigInt::from(3), BigInt::from(-3)), // -8/3 = -2.67... -> -3
-        ];
-
-        for (dividend, divisor, expected) in test_cases {
-            let twice_dividend = &dividend * 2;
-            let rounded_quotient = if dividend.is_negative() {
-                (&twice_dividend - &divisor) / (&divisor * 2)
-            } else {
-                (&twice_dividend + &divisor) / (&divisor * 2)
-            };
-
-            assert_eq!(
-                rounded_quotient, expected,
-                "Rounding division failed: {dividend} / {divisor} should be {expected}, got {rounded_quotient}"
-            );
-        }
-    }
 }

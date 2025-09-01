@@ -8,12 +8,10 @@
 
 use console::style;
 use pvw::{
-    crs::PvwCrs,
-    decryption, encryption,
-    encryption::PvwCiphertext,
-    params::PvwParametersBuilder,
-    public_key::{GlobalPublicKey, Party},
-    PvwParameters,
+    crypto::PvwCiphertext,
+    crypto::{decrypt_party_shares, decrypt_threshold_party_shares, encrypt_all_party_shares},
+    keys::{GlobalPublicKey, Party},
+    params::{PvwCrs, PvwParameters, PvwParametersBuilder},
 };
 use rand::{rngs::OsRng, seq::SliceRandom};
 use std::error::Error;
@@ -123,7 +121,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Encrypt all party vectors (creates n ciphertexts, one per dealer)
     let start_time = std::time::Instant::now();
-    let all_ciphertexts = encryption::encrypt_all_party_shares(&all_party_vectors, &global_pk)?;
+    let all_ciphertexts = encrypt_all_party_shares(&all_party_vectors, &global_pk)?;
     let encryption_time = start_time.elapsed();
 
     // ALL parties will decrypt the same t ciphertexts (same subset of dealers)
@@ -156,7 +154,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // All parties decrypt the same set of t ciphertexts
     let threshold_shares_only =
-        decryption::decrypt_threshold_party_shares(&selected_ciphertexts, &all_keys, threshold)?;
+        decrypt_threshold_party_shares(&selected_ciphertexts, &all_keys, threshold)?;
 
     let decryption_time = start_decrypt.elapsed();
 
@@ -242,7 +240,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Results summary
     let threshold_success_rate = (threshold_correct as f64 / threshold_total as f64) * 100.0;
     println!("📈 {}", style("Threshold Results Summary:").blue().bold());
-    println!("  • Threshold success rate: {threshold_correct}/{threshold_total} ({threshold_success_rate:.1}%)");
+    println!(
+        "  • Threshold success rate: {threshold_correct}/{threshold_total} ({threshold_success_rate:.1}%)"
+    );
     println!("  • Operations: {num_parties} encrypt calls, 1 threshold decrypt call (all parties)");
     println!("  • Each party decrypted {threshold} shares (instead of all {num_parties})");
     println!();
@@ -272,7 +272,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // For comparison, also do full decryption on one party
     let comparison_party_idx = 0;
-    let full_shares = decryption::decrypt_party_shares(
+    let full_shares = decrypt_party_shares(
         &all_ciphertexts,
         &parties[comparison_party_idx].secret_key,
         comparison_party_idx,

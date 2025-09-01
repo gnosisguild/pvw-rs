@@ -7,11 +7,9 @@
 
 use console::style;
 use pvw::{
-    crs::PvwCrs,
-    decryption, encryption,
-    params::PvwParametersBuilder,
-    public_key::{GlobalPublicKey, Party},
-    PvwParameters,
+    crypto::{decrypt_party_shares, encrypt_all_party_shares},
+    keys::{GlobalPublicKey, Party},
+    params::{PvwCrs, PvwParameters, PvwParametersBuilder},
 };
 use rand::rngs::OsRng;
 use rayon::prelude::*;
@@ -123,7 +121,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Encrypt all party vectors (creates n ciphertexts, one per dealer)
     let start_time = std::time::Instant::now();
-    let all_ciphertexts = encryption::encrypt_all_party_shares(&all_party_vectors, &global_pk)?;
+    let all_ciphertexts = encrypt_all_party_shares(&all_party_vectors, &global_pk)?;
     let encryption_time = start_time.elapsed();
 
     // Decrypt shares using the new efficient function
@@ -136,7 +134,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .take(num_parties)
         .map(|(recipient_party_index, recipient_party)| {
             // Use the new function to decrypt all shares intended for this party
-            decryption::decrypt_party_shares(
+            decrypt_party_shares(
                 &all_ciphertexts,
                 &recipient_party.secret_key,
                 recipient_party_index,
