@@ -3,15 +3,15 @@
 //! This module provides the foundational traits that define the interface
 //! for serialization, encoding, and validation across all PVW types.
 
-use std::result::Result;
+use crate::errors::PvwError;
 
 /// Trait for serializing types to and from bytes
 pub trait Serialize {
     /// Serialize the type to a byte vector
-    fn to_bytes(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>;
+    fn to_bytes(&self) -> Result<Vec<u8>, PvwError>;
 
     /// Deserialize the type from a byte slice
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>
+    fn from_bytes(bytes: &[u8]) -> Result<Self, PvwError>
     where
         Self: Sized;
 }
@@ -19,10 +19,10 @@ pub trait Serialize {
 /// Trait for encoding types to and from bytes with specific format
 pub trait Encode {
     /// Encode the type to a byte vector
-    fn encode(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>;
+    fn encode(&self) -> Result<Vec<u8>, PvwError>;
 
     /// Decode the type from a byte slice
-    fn decode(bytes: &[u8]) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>
+    fn decode(bytes: &[u8]) -> Result<Self, PvwError>
     where
         Self: Sized;
 }
@@ -30,7 +30,7 @@ pub trait Encode {
 /// Trait for validating types
 pub trait Validate {
     /// Validate the type and return a result
-    fn validate(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    fn validate(&self) -> Result<(), PvwError>;
 
     /// Check if the type is valid
     fn is_valid(&self) -> bool {

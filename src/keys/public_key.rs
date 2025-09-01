@@ -1,6 +1,7 @@
 use super::secret_key::SecretKey;
+use crate::errors::PvwError;
 use crate::params::crs::PvwCrs;
-use crate::params::parameters::{PvwError, PvwParameters, Result};
+use crate::params::parameters::{PvwParameters, Result};
 use fhe_math::rq::{Poly, Representation};
 use ndarray::Array2;
 use rand::{CryptoRng, RngCore};
@@ -111,10 +112,10 @@ impl PublicKey {
     ) -> Result<Self> {
         // Validate dimensions
         if secret_key.params.k != crs.params.k {
-            return Err(PvwError::InvalidParameters(format!(
-                "Secret key dimension {} doesn't match CRS dimension {}",
-                secret_key.params.k, crs.params.k
-            )));
+            return Err(PvwError::DimensionMismatch {
+                expected: crs.params.k,
+                actual: secret_key.params.k,
+            });
         }
 
         // Compute A * secret_key using CRS matrix multiplication

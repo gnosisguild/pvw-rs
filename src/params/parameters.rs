@@ -1,3 +1,8 @@
+//! Parameters and Common Reference String (CRS) for the PVW library
+//!
+//! This module manages the various parameters required for the PVW scheme
+//! and the Common Reference String used in cryptographic protocols.
+use crate::errors::{PvwError, PvwResult};
 use crate::sampling::normal::sample_discrete_gaussian_vec;
 use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Context, Poly, Representation};
@@ -7,22 +12,8 @@ use num_bigint::BigUint;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
-use thiserror::Error;
 
-/// PVW-specific errors
-#[derive(Error, Debug)]
-pub enum PvwError {
-    #[error("Invalid parameters: {0}")]
-    InvalidParameters(String),
-    #[error("Sampling error: {0}")]
-    SamplingError(String),
-    #[error("Encryption error: {0}")]
-    EncryptionError(String),
-    #[error("Decryption error: {0}")]
-    DecryptionError(String),
-}
-
-pub type Result<T> = std::result::Result<T, PvwError>;
+pub type Result<T> = PvwResult<T>;
 
 /// PVW Parameters using fhe.rs Context and polynomial representation
 #[derive(Debug, Clone)]

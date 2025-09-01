@@ -1,4 +1,5 @@
-use crate::params::parameters::{PvwError, PvwParameters, Result};
+use crate::errors::PvwError;
+use crate::params::parameters::{PvwParameters, Result};
 use fhe_math::rq::{Poly, Representation};
 use fhe_util::sample_vec_cbd;
 use rand::{CryptoRng, RngCore};
@@ -292,8 +293,9 @@ impl SecretKey {
             return (0, 0, 0.0);
         }
 
-        let min = *all_coeffs.iter().min().unwrap();
-        let max = *all_coeffs.iter().max().unwrap();
+        // Safe to unwrap here since we've checked that all_coeffs is not empty
+        let min = *all_coeffs.iter().min().expect("all_coeffs is not empty");
+        let max = *all_coeffs.iter().max().expect("all_coeffs is not empty");
         let mean = all_coeffs.iter().sum::<i64>() as f64 / all_coeffs.len() as f64;
 
         (min, max, mean)

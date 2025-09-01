@@ -1,6 +1,7 @@
 use super::encryption::PvwCiphertext;
+use crate::errors::PvwError;
 use crate::keys::secret_key::SecretKey;
-use crate::params::parameters::{PvwError, PvwParameters, Result};
+use crate::params::parameters::{PvwParameters, Result};
 use fhe_math::rq::{Poly, Representation};
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, Signed, ToPrimitive, Zero};

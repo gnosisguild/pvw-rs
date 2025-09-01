@@ -1,4 +1,5 @@
-use super::parameters::{PvwError, PvwParameters, Result};
+use super::parameters::{PvwParameters, Result};
+use crate::errors::PvwError;
 use fhe_math::rq::{Poly, Representation};
 use fhe_traits::Serialize;
 use ndarray::Array2;
@@ -155,9 +156,10 @@ impl PvwCrs {
 
             for j in 0..self.params.k {
                 let sk_poly = secret_key.get_polynomial(j)?;
-                let crs_poly = self
-                    .get(j, i)
-                    .ok_or_else(|| PvwError::InvalidParameters("Invalid CRS index".to_string()))?;
+                let crs_poly = self.get(j, i).ok_or_else(|| PvwError::IndexOutOfBounds {
+                    index: j,
+                    bound: self.params.k,
+                })?;
 
                 let product = &sk_poly * crs_poly;
                 sum = &sum + &product;
@@ -175,11 +177,10 @@ impl PvwCrs {
     /// Used in PVW encryption: c1 = A * r + e1.
     pub fn multiply_by_randomness(&self, randomness: &[Poly]) -> Result<Vec<Poly>> {
         if randomness.len() != self.params.k {
-            return Err(PvwError::InvalidParameters(format!(
-                "Randomness vector length {} doesn't match CRS dimension k={}",
-                randomness.len(),
-                self.params.k
-            )));
+            return Err(PvwError::DimensionMismatch {
+                expected: self.params.k,
+                actual: randomness.len(),
+            });
         }
 
         let mut result = Vec::with_capacity(self.params.k);
@@ -189,9 +190,10 @@ impl PvwCrs {
             let mut sum = Poly::zero(&self.params.context, Representation::Ntt);
 
             for (j, randomness_poly) in randomness.iter().enumerate().take(self.params.k) {
-                let crs_poly = self
-                    .get(i, j)
-                    .ok_or_else(|| PvwError::InvalidParameters("Invalid CRS index".to_string()))?;
+                let crs_poly = self.get(i, j).ok_or_else(|| PvwError::IndexOutOfBounds {
+                    index: i,
+                    bound: self.params.k,
+                })?;
 
                 let product = crs_poly * randomness_poly;
                 sum = &sum + &product;

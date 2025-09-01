@@ -12,6 +12,7 @@
 //! - `sampling`: Mathematical sampling utilities
 
 pub mod crypto;
+pub mod errors;
 pub mod keys;
 pub mod params;
 pub mod sampling;
@@ -32,7 +33,10 @@ pub mod prelude {
     pub use crate::keys::{GlobalPublicKey, Party, PublicKey, SecretKey};
 
     // Re-export parameter types
-    pub use crate::params::{PvwCrs, PvwError, PvwParameters, PvwParametersBuilder, Result};
+    pub use crate::params::{PvwCrs, PvwParameters, PvwParametersBuilder, Result};
+
+    // Re-export error types
+    pub use crate::errors::{PvwError, PvwResult};
 
     // Re-export crypto types
     pub use crate::crypto::{
@@ -48,6 +52,7 @@ pub mod prelude {
 }
 
 // Re-export commonly used types at the top level for backward compatibility
+pub use errors::{PvwError, PvwResult};
 pub use keys::{GlobalPublicKey, Party, PublicKey, SecretKey};
 pub use params::PvwCrs;
-pub use params::{PvwError, PvwParameters, PvwParametersBuilder, Result};
+pub use params::{PvwParameters, PvwParametersBuilder, Result};

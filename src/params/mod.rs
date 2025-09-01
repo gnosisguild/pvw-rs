@@ -5,9 +5,9 @@
 
 pub mod crs;
 pub mod parameters;
-
+pub use crate::errors::{PvwError, PvwResult};
 pub use crs::PvwCrs;
-pub use parameters::{PvwError, PvwParameters, PvwParametersBuilder, Result};
+pub use parameters::{PvwParameters, PvwParametersBuilder, Result};
 
 /// Re-export parameter-related types and functions
 pub mod prelude {
