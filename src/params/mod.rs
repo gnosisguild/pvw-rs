@@ -4,10 +4,10 @@
 //! and the Common Reference String used in cryptographic protocols.
 
 pub mod crs;
-pub mod params;
+pub mod parameters;
 
 pub use crs::PvwCrs;
-pub use params::{PvwError, PvwParameters, PvwParametersBuilder, Result};
+pub use parameters::{PvwError, PvwParameters, PvwParametersBuilder, Result};
 
 /// Re-export parameter-related types and functions
 pub mod prelude {

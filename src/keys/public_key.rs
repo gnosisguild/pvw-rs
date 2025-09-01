@@ -1,6 +1,6 @@
 use super::secret_key::SecretKey;
 use crate::params::crs::PvwCrs;
-use crate::params::params::{PvwError, PvwParameters, Result};
+use crate::params::parameters::{PvwError, PvwParameters, Result};
 use fhe_math::rq::{Poly, Representation};
 use ndarray::Array2;
 use rand::{CryptoRng, RngCore};
