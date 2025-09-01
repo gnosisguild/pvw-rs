@@ -1,4 +1,4 @@
-use crate::params::{PvwError, PvwParameters, Result};
+use super::params::{PvwError, PvwParameters, Result};
 use fhe_math::rq::{Poly, Representation};
 use fhe_traits::Serialize;
 use ndarray::Array2;

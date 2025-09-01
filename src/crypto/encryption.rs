@@ -1,5 +1,5 @@
-use crate::params::{PvwError, PvwParameters, Result};
-use crate::public_key::GlobalPublicKey;
+use crate::keys::public_key::GlobalPublicKey;
+use crate::params::params::{PvwError, PvwParameters, Result};
 use fhe_math::rq::{Poly, Representation};
 use fhe_util::sample_vec_cbd;
 use rayon::prelude::*;

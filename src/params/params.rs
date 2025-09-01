@@ -1,4 +1,4 @@
-use crate::normal::sample_discrete_gaussian_vec;
+use crate::sampling::normal::sample_discrete_gaussian_vec;
 use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Context, Poly, Representation};
 use fhe_util::sample_vec_cbd;

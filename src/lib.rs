@@ -1,16 +1,53 @@
 //! PVW Multi-Receiver LWE Encryption Scheme
 //!
-//! Implementation following "Practical Non-interactive Publicly Verifiable Secret Sharing with Thousands of Parties" (Section 2.5)
-//! https://eprint.iacr.org/2021/1397.pdf
+//! A pure-Rust implementation of the PVW (Peikert-Vaikuntanathan-Waters)
+//! multi-receiver LWE encryption scheme designed for use in threshold schemes,
+//! PVSS (Publicly Verifiable Secret Sharing), and lattice-based cryptography.
 //!
-pub use crate::crs::PvwCrs;
-pub use crate::params::{PvwError, PvwParameters, PvwParametersBuilder, Result};
-pub use crate::public_key::{GlobalPublicKey, Party, PublicKey};
-pub use crate::secret_key::SecretKey;
-pub mod crs;
-pub mod decryption;
-pub mod encryption;
-pub mod normal;
+//! ## Modules
+//! - `keys`: Key generation and management
+//! - `params`: Scheme parameters and CRS
+//! - `traits`: Common interfaces for serialization, encoding, and validation
+//! - `crypto`: Core encryption and decryption operations
+//! - `sampling`: Mathematical sampling utilities
+
+pub mod crypto;
+pub mod keys;
 pub mod params;
-pub mod public_key;
-pub mod secret_key;
+pub mod sampling;
+pub mod traits;
+
+// Re-export main types for convenience
+pub use crypto::*;
+pub use keys::*;
+pub use params::*;
+pub use sampling::*;
+
+// Re-export traits
+pub use traits::{Encode, Serialize, Validate};
+
+// Module preludes for easy importing
+pub mod prelude {
+    // Re-export key types
+    pub use crate::keys::{GlobalPublicKey, Party, PublicKey, SecretKey};
+
+    // Re-export parameter types
+    pub use crate::params::{PvwCrs, PvwError, PvwParameters, PvwParametersBuilder, Result};
+
+    // Re-export crypto types
+    pub use crate::crypto::{
+        decrypt_party_shares, decrypt_party_value, decrypt_threshold_party_shares, encrypt,
+        PvwCiphertext,
+    };
+
+    // Re-export sampling functions
+    pub use crate::sampling::normal::{sample_bigint_normal_vec, sample_discrete_gaussian_vec};
+
+    // Re-export traits
+    pub use crate::traits::{Encode, Serialize, Validate};
+}
+
+// Re-export commonly used types at the top level for backward compatibility
+pub use keys::{GlobalPublicKey, Party, PublicKey, SecretKey};
+pub use params::PvwCrs;
+pub use params::{PvwError, PvwParameters, PvwParametersBuilder, Result};
