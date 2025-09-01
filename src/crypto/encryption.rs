@@ -460,9 +460,11 @@ mod tests {
         for i in 0..global_pk.params.n {
             assert!(ciphertext.get_party_ciphertext(i).is_some());
         }
-        assert!(ciphertext
-            .get_party_ciphertext(global_pk.params.n)
-            .is_none());
+        assert!(
+            ciphertext
+                .get_party_ciphertext(global_pk.params.n)
+                .is_none()
+        );
     }
 
     #[test]

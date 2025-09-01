@@ -56,7 +56,7 @@ impl PvwCrs {
 
         // Generate each matrix element with independent randomness
         for elem in matrix.iter_mut() {
-            let element_seed = master_rng.gen::<[u8; 32]>();
+            let element_seed = master_rng.r#gen::<[u8; 32]>();
             *elem = Poly::random_from_seed(&params.context, Representation::Ntt, element_seed);
         }
 

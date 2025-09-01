@@ -36,8 +36,8 @@ pub mod prelude {
 
     // Re-export crypto types
     pub use crate::crypto::{
-        decrypt_party_shares, decrypt_party_value, decrypt_threshold_party_shares, encrypt,
-        PvwCiphertext,
+        PvwCiphertext, decrypt_party_shares, decrypt_party_value, decrypt_threshold_party_shares,
+        encrypt,
     };
 
     // Re-export sampling functions

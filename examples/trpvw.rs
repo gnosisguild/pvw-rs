@@ -240,7 +240,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Results summary
     let threshold_success_rate = (threshold_correct as f64 / threshold_total as f64) * 100.0;
     println!("📈 {}", style("Threshold Results Summary:").blue().bold());
-    println!("  • Threshold success rate: {threshold_correct}/{threshold_total} ({threshold_success_rate:.1}%)");
+    println!(
+        "  • Threshold success rate: {threshold_correct}/{threshold_total} ({threshold_success_rate:.1}%)"
+    );
     println!("  • Operations: {num_parties} encrypt calls, 1 threshold decrypt call (all parties)");
     println!("  • Each party decrypted {threshold} shares (instead of all {num_parties})");
     println!();

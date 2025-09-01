@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use rayon::prelude::*;
 use std::f64::consts::PI;
 
@@ -99,7 +99,7 @@ fn sample_large_variance_fallback(variance: &BigInt, rng: &mut impl Rng) -> BigI
     let mut sample = BigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes);
 
     // Apply random sign
-    if rng.gen::<bool>() {
+    if rng.r#gen::<bool>() {
         sample = -sample;
     }
 
@@ -144,7 +144,7 @@ fn sample_single_gaussian(bound: &BigInt, rng: &mut impl Rng) -> BigInt {
     if bound_f64 > 1e15 {
         // For very large bounds, just return a random value in a reasonable range
         // let reasonable_bound = BigInt::from(1000000i64);
-        let sign = if rng.gen::<bool>() { 1 } else { -1 };
+        let sign = if rng.r#gen::<bool>() { 1 } else { -1 };
         return BigInt::from(rng.gen_range(0..=1000000) * sign);
     }
 

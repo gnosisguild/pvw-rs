@@ -229,7 +229,12 @@ impl SecretKey {
                 if coeff.abs() > max_bound {
                     return Err(PvwError::InvalidParameters(format!(
                         "Coefficient at polynomial {} index {} is {} but should be in [-{}, {}] for variance {}",
-                        poly_idx, coeff_idx, coeff, max_bound, max_bound, self.params.secret_variance
+                        poly_idx,
+                        coeff_idx,
+                        coeff,
+                        max_bound,
+                        max_bound,
+                        self.params.secret_variance
                     )));
                 }
             }
