@@ -2,68 +2,70 @@
 
 A pure-Rust implementation of the PVW (Peikert–Vaikuntanathan–Waters) multi-receiver LWE encryption scheme designed for use in threshold schemes, PVSS (Publicly Verifiable Secret Sharing), and lattice-based cryptography.
 
-This implementation follows the protocol described in "Practical Non-interactive Publicly Verifiable Secret Sharing with Thousands of Parties" (Section 2.5) from https://eprint.iacr.org/2021/1397.pdf. The current implementation provides a passively secure version of the protocol optimized for multi-party secret sharing scenarios.
+[![Rust Version](https://img.shields.io/badge/rust-1.86.0+-blue.svg)](https://www.rust-lang.org)
 
-## Architecture
+## Features
 
-The module follows a modular design with clear separation of concerns:
+- **Multi-receiver encryption** supporting thousands of parties in a single operation
+- **RNS optimization** with full Residue Number System support for efficient polynomial arithmetic
+- **Threshold decryption** with support for decryption with subset of parties
+- **Parameter validation** ensuring correctness condition satisfaction and security bounds
+- **Complete serialization** for distributed deployments and key management
+- **Parallel processing** optimized for large-scale operations
 
-- `params.rs` - PVW parameter management with RNS (Residue Number System) support and correctness condition validation
-- `crs.rs` - Common Reference String generation and management for multi-party encryption
-- `secret_key.rs` - Secret key generation using CBD (Centered Binomial Distribution) with efficient coefficient storage
-- `public_key.rs` - Individual and global public key management for multi-party scenarios
-- `encryption.rs` - Multi-receiver encryption operations supporting vector encryption and broadcast modes
-- `decryption.rs` - RNS-aware decryption with PVW decoding algorithm and threshold decryption support
-- `normal.rs` - Truncated Gaussian sampling for large variance noise generation with arbitrary precision arithmetic
+### Mathematical Background
 
-The module provides complete serialization support for distributed deployments:
+This library implements the PVW scheme as described in "Practical Non-interactive Publicly Verifiable Secret Sharing with Thousands of Parties" (Section 2.5) from [eprint.iacr.org/2021/1397.pdf](https://eprint.iacr.org/2021/1397.pdf).
 
-- `PvwCrs::to_bytes()` / `PvwCrs::from_bytes()` - For common reference strings
-- `GlobalPublicKey::to_bytes()` / `GlobalPublicKey::from_bytes()` - For global public keys
-- `SecretKey::serialize_coefficients()` / `SecretKey::from_coefficients()` - For secret key matrices
-- `PvwCiphertext::to_bytes()` / `PvwCiphertext::from_bytes()` - For encrypted data
+The scheme provides:
+- **LWE-based encryption** with polynomial ring arithmetic
+- **Multi-party key generation** using Common Reference String (CRS)
+- **Threshold decryption** with PVW decoding algorithm
+- **RNS-aware operations** for efficient modular arithmetic
+
+### Cryptographic Operations
+
+The library supports three main encryption modes:
+
+1. **Vector Encryption**: Encrypt a vector of `n` values where each party can decrypt only their designated value
+2. **Broadcast Encryption**: Encrypt a single value that all parties can decrypt  
+3. **Share Distribution**: Efficiently distribute secret shares to multiple parties in a single operation
+
+### Performance
+
+The library is optimized for cryptographic workloads with:
+
+- **Efficient polynomial arithmetic** using fhe.rs infrastructure
+- **NTT representation** for fast ring operations
+- **Minimal memory allocations** with on-demand polynomial conversion
+- **Parallel sampling** for large-scale operations
+- **RNS optimization** for modular arithmetic
 
 ## Usage
 
-For a complete working example demonstrating multi-party setup, share distribution, and threshold decryption, see [`examples/pvw.rs`](examples/pvw.rs).
+### Installation
 
-The example can be run with configurable parameters:
-```bash
-cargo run --example pvw
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+pvw = { git = "https://github.com/gnosisguild/pvw-rs" }
 ```
 
-## Key Features
+## Architecture
 
-### Multi-Receiver Encryption
-- **Vector Encryption**: Encrypt a vector of `n` values where each party can decrypt only their designated value
-- **Broadcast Encryption**: Encrypt a single value that all parties can decrypt
-- **Share Distribution**: Efficiently distribute secret shares to multiple parties in a single operation
+The library follows a modular design with clear separation of concerns:
 
-### RNS Optimization
-- **Residue Number System**: Full RNS support for efficient polynomial arithmetic
-- **NTT Representation**: Automatic conversion to NTT form for fast ring operations
-- **Modular Arithmetic**: Optimized modular operations using fhe.rs infrastructure
-
-### Parameter Management
-- **Correctness Validation**: Built-in parameter validation ensuring decryption correctness
-- **Security Bounds**: Automatic calculation of error bounds and security parameters
-- **Flexible Configuration**: Support for custom moduli chains and security levels
-
-### Threshold Operations
-- **Threshold Decryption**: Support for decryption with subset of parties
-- **Share Aggregation**: Efficient aggregation of decryption shares
-- **Robust Decoding**: Multiple decoding strategies for different noise levels
+- **`params`** - Parameter management with RNS support and correctness validation
+- **`crs`** - Common Reference String generation and management
+- **`keys`** - Secret and public key generation using CBD sampling
+- **`crypto`** - Core encryption and decryption operations
+- **`sampling`** - Truncated Gaussian sampling for noise generation
+- **`traits`** - Common interfaces for serialization and validation
 
 ## Security Considerations
 
 This implementation has not been independently audited. Use with appropriate caution in production environments.
-
-The security of the PVW scheme relies on:
-- Proper parameter selection for the underlying LWE problem
-- Secure generation and distribution of the common reference string
-- Protection of individual secret keys
-- Appropriate noise sampling and error bounds
-- Correctness condition satisfaction for decryption reliability
 
 ### Parameter Selection Guidelines
 
@@ -81,23 +83,60 @@ For different security levels:
 ## Dependencies
 
 The implementation leverages the fhe.rs ecosystem:
-- `fhe-math`: Efficient polynomial arithmetic and RNS operations
-- `fhe-util`: Cryptographic utilities and sampling functions
-- `fhe-traits`: Common traits for serialization and operations
+- **`fhe-math`**: Efficient polynomial arithmetic and RNS operations
+- **`fhe-util`**: Cryptographic utilities and sampling functions  
+- **`fhe-traits`**: Common traits for serialization and operations
 
 Additional dependencies:
-- `num-bigint`: Arbitrary precision arithmetic for large parameter handling
-- `ndarray`: Efficient matrix operations for CRS and public key management
-- `rayon`: Parallel processing for large-scale operations
-- `zeroize`: Secure memory clearing for sensitive data
+- **`num-bigint`**: Arbitrary precision arithmetic for large parameter handling
+- **`ndarray`**: Efficient matrix operations for CRS and public key management
+- **`rayon`**: Parallel processing for large-scale operations
+- **`zeroize`**: Secure memory clearing for sensitive data
 
-## Performance
+## Testing
 
-The implementation is optimized for:
-- **Large-scale deployments**: Efficient handling of thousands of parties
-- **Batch operations**: Optimized for encrypting multiple vectors simultaneously
-- **Memory efficiency**: On-demand polynomial conversion and RNS-aware storage
-- **Parallel processing**: Multi-threaded sampling and arithmetic operations
+Run the test suite:
+
+```bash
+cargo test
+```
+
+Run tests with verbose output:
+
+```bash
+cargo test -- --nocapture
+```
+
+## Benchmarks
+
+Run benchmarks:
+
+```bash
+cargo bench
+```
+
+The benchmarks cover:
+- Parameter generation for different security levels
+- CRS generation and validation
+- Key generation workflows
+- Sampling operations
+- Validation operations
+
+## Examples
+
+For complete working examples demonstrating multi-party setup, share distribution, and threshold decryption, see the `examples/` directory:
+
+```bash
+# Multi-party PVW example
+cargo run --example pvw
+
+# Threshold PVW example  
+cargo run --example trpvw
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
 ## License
 
