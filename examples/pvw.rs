@@ -37,7 +37,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (suggested_variance, suggested_bound1, suggested_bound2) =
         PvwParameters::suggest_correct_parameters(num_parties, dimension, ring_degree, &moduli)
             .unwrap_or((1, 50, 100));
-    println!("Suggested variance: {suggested_variance}, Suggested bound1: {suggested_bound1}, Suggested bound2: {suggested_bound2}");
+    println!(
+        "Suggested variance: {suggested_variance}, Suggested bound1: {suggested_bound1}, Suggested bound2: {suggested_bound2}"
+    );
     // Build PVW parameters
     let params = PvwParametersBuilder::new()
         .set_parties(num_parties)

@@ -3,24 +3,12 @@ use crate::errors::PvwError;
 use crate::params::crs::PvwCrs;
 use crate::params::parameters::{PvwParameters, Result};
 use fhe_math::rq::{Poly, Representation};
-use fhe_traits::{Serialize, DeserializeWithContext};
 use ndarray::Array2;
 use rand::{CryptoRng, RngCore};
 use rayon::prelude::*;
 use std::sync::Arc;
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize as SerdeSerialize};
 
-/// Serializable representation of a Party
-#[cfg(feature = "serde")]
-#[derive(Debug, Clone, SerdeSerialize, Deserialize)]
-pub struct SerializableParty {
-    /// Unique index for this party (0 to n-1)
-    pub index: usize,
-    /// This party's secret key in serializable form
-    pub secret_key: super::secret_key::SerializableSecretKey,
-}
 
 /// Individual party in the PVSS protocol
 ///
@@ -112,27 +100,7 @@ impl Party {
         &self.secret_key
     }
 
-    /// Convert to serializable format (when serde feature is enabled)
-    #[cfg(feature = "serde")]
-    pub fn to_serializable(&self) -> SerializableParty {
-        SerializableParty {
-            index: self.index,
-            secret_key: self.secret_key.to_serializable(),
-        }
-    }
 
-    /// Create from serializable format (when serde feature is enabled)
-    #[cfg(feature = "serde")]
-    pub fn from_serializable(
-        serializable: SerializableParty,
-        params: &Arc<PvwParameters>,
-    ) -> Result<Self> {
-        let secret_key = SecretKey::from_serializable(serializable.secret_key, params.clone())?;
-        Ok(Self {
-            index: serializable.index,
-            secret_key,
-        })
-    }
 }
 
 impl PublicKey {
@@ -215,100 +183,6 @@ impl PublicKey {
         }
 
         Ok(())
-    }
-}
-
-impl Serialize for PublicKey {
-    /// Serialize the public key to bytes
-    ///
-    /// Serializes all k polynomials in order with length prefixes.
-    /// Format: [k as u32][poly1_len][poly1_bytes][poly2_len][poly2_bytes]...
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        
-        // Serialize number of polynomials for validation
-        bytes.extend_from_slice(&(self.key_polynomials.len() as u32).to_le_bytes());
-        
-        // Serialize each polynomial with length prefix
-        for poly in &self.key_polynomials {
-            let poly_bytes = poly.to_bytes();
-            bytes.extend_from_slice(&(poly_bytes.len() as u32).to_le_bytes());
-            bytes.extend_from_slice(&poly_bytes);
-        }
-        
-        bytes
-    }
-}
-
-impl PublicKey {
-    /// Deserialize a public key from bytes with parameters
-    ///
-    /// This method requires the PvwParameters to properly reconstruct
-    /// the polynomials with the correct context.
-    pub fn from_bytes_with_params(
-        bytes: &[u8], 
-        params: Arc<PvwParameters>
-    ) -> Result<Self> {
-        if bytes.len() < 4 {
-            return Err(PvwError::InsufficientData { 
-                expected: 4, 
-                actual: bytes.len() 
-            });
-        }
-        
-        let mut offset = 0;
-        
-        // Read number of polynomials
-        let k = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], 
-            bytes[offset + 2], bytes[offset + 3]
-        ]) as usize;
-        offset += 4;
-        
-        if k != params.k {
-            return Err(PvwError::InvalidFormat(format!(
-                "Expected {} polynomials, found {}", params.k, k
-            )));
-        }
-        
-        let mut key_polynomials = Vec::with_capacity(k);
-        
-        // Deserialize each polynomial
-        for i in 0..k {
-            if offset + 4 > bytes.len() {
-                return Err(PvwError::InsufficientData { 
-                    expected: offset + 4, 
-                    actual: bytes.len() 
-                });
-            }
-            
-            // Read polynomial length
-            let poly_len = u32::from_le_bytes([
-                bytes[offset], bytes[offset + 1], 
-                bytes[offset + 2], bytes[offset + 3]
-            ]) as usize;
-            offset += 4;
-            
-            if offset + poly_len > bytes.len() {
-                return Err(PvwError::InsufficientData { 
-                    expected: offset + poly_len, 
-                    actual: bytes.len() 
-                });
-            }
-            
-            // Deserialize polynomial
-            let poly_bytes = &bytes[offset..offset + poly_len];
-            let poly = Poly::from_bytes(poly_bytes, &params.context)
-                .map_err(|e| PvwError::DeserializationError(format!("Failed to deserialize polynomial {}: {:?}", i, e)))?;
-            
-            key_polynomials.push(poly);
-            offset += poly_len;
-        }
-        
-        Ok(Self {
-            key_polynomials,
-            params,
-        })
     }
 }
 
@@ -552,154 +426,5 @@ impl GlobalPublicKey {
         }
 
         Ok(polys)
-    }
-}
-
-impl Serialize for GlobalPublicKey {
-    /// Serialize the global public key to bytes
-    ///
-    /// Format: [CRS bytes][n as u32][k as u32][num_keys as u32][matrix polynomials]
-    /// The matrix is serialized in row-major order with length prefixes.
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        
-        // Serialize the CRS first
-        let crs_bytes = self.crs.to_bytes();
-        bytes.extend_from_slice(&(crs_bytes.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(&crs_bytes);
-        
-        // Serialize matrix dimensions and number of keys
-        bytes.extend_from_slice(&(self.params.n as u32).to_le_bytes());
-        bytes.extend_from_slice(&(self.params.k as u32).to_le_bytes());
-        bytes.extend_from_slice(&(self.num_keys as u32).to_le_bytes());
-        
-        // Serialize the polynomial matrix in row-major order
-        for i in 0..self.params.n {
-            for j in 0..self.params.k {
-                let poly = &self.matrix[(i, j)];
-                let poly_bytes = poly.to_bytes();
-                bytes.extend_from_slice(&(poly_bytes.len() as u32).to_le_bytes());
-                bytes.extend_from_slice(&poly_bytes);
-            }
-        }
-        
-        bytes
-    }
-}
-
-impl GlobalPublicKey {
-    /// Deserialize a global public key from bytes with parameters
-    ///
-    /// This method requires PvwParameters to properly reconstruct the CRS and
-    /// polynomial matrix with the correct context.
-    pub fn from_bytes_with_params(
-        bytes: &[u8], 
-        params: Arc<PvwParameters>
-    ) -> Result<Self> {
-        if bytes.len() < 4 {
-            return Err(PvwError::InsufficientData { 
-                expected: 4, 
-                actual: bytes.len() 
-            });
-        }
-        
-        let mut offset = 0;
-        
-        // Read CRS length and deserialize CRS
-        let crs_len = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], 
-            bytes[offset + 2], bytes[offset + 3]
-        ]) as usize;
-        offset += 4;
-        
-        if offset + crs_len > bytes.len() {
-            return Err(PvwError::InsufficientData { 
-                expected: offset + crs_len, 
-                actual: bytes.len() 
-            });
-        }
-        
-        let crs_bytes = &bytes[offset..offset + crs_len];
-        let crs = PvwCrs::from_bytes_with_params(crs_bytes, params.clone())?;
-        offset += crs_len;
-        
-        // Read matrix dimensions and number of keys
-        if offset + 12 > bytes.len() {
-            return Err(PvwError::InsufficientData { 
-                expected: offset + 12, 
-                actual: bytes.len() 
-            });
-        }
-        
-        let n = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], 
-            bytes[offset + 2], bytes[offset + 3]
-        ]) as usize;
-        offset += 4;
-        
-        let k = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], 
-            bytes[offset + 2], bytes[offset + 3]
-        ]) as usize;
-        offset += 4;
-        
-        let num_keys = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], 
-            bytes[offset + 2], bytes[offset + 3]
-        ]) as usize;
-        offset += 4;
-        
-        // Validate dimensions
-        if n != params.n || k != params.k {
-            return Err(PvwError::InvalidFormat(format!(
-                "Dimension mismatch: expected {}×{}, found {}×{}", 
-                params.n, params.k, n, k
-            )));
-        }
-        
-        // Initialize matrix with zero polynomials
-        let zero_poly = Poly::zero(&params.context, Representation::Ntt);
-        let mut matrix = Array2::from_elem((n, k), zero_poly);
-        
-        // Deserialize the polynomial matrix in row-major order
-        for i in 0..n {
-            for j in 0..k {
-                if offset + 4 > bytes.len() {
-                    return Err(PvwError::InsufficientData { 
-                        expected: offset + 4, 
-                        actual: bytes.len() 
-                    });
-                }
-                
-                // Read polynomial length
-                let poly_len = u32::from_le_bytes([
-                    bytes[offset], bytes[offset + 1], 
-                    bytes[offset + 2], bytes[offset + 3]
-                ]) as usize;
-                offset += 4;
-                
-                if offset + poly_len > bytes.len() {
-                    return Err(PvwError::InsufficientData { 
-                        expected: offset + poly_len, 
-                        actual: bytes.len() 
-                    });
-                }
-                
-                // Deserialize polynomial
-                let poly_bytes = &bytes[offset..offset + poly_len];
-                let poly = Poly::from_bytes(poly_bytes, &params.context)
-                    .map_err(|e| PvwError::DeserializationError(format!("Failed to deserialize matrix polynomial ({}, {}): {:?}", i, j, e)))?;
-                
-                matrix[(i, j)] = poly;
-                offset += poly_len;
-            }
-        }
-        
-        Ok(Self {
-            matrix,
-            crs,
-            num_keys,
-            params,
-        })
     }
 }

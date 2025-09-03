@@ -13,39 +13,7 @@ use num_traits::{One, Signed, ToPrimitive, Zero};
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize as SerdeSerialize};
-
 pub type Result<T> = PvwResult<T>;
-
-/// Serializable representation of PVW parameters
-///
-/// This struct contains only the data that can be easily serialized,
-/// excluding the fhe.rs Context which needs special handling.
-#[cfg(feature = "serde")]
-#[derive(Debug, Clone, SerdeSerialize, Deserialize)]
-pub struct SerializablePvwParameters {
-    /// Number of parties
-    pub n: usize,
-    /// Security threshold (t < n/2)
-    pub t: usize,
-    /// LWE dimension
-    pub k: usize,
-    /// Redundancy parameter ℓ (number of coefficients)
-    pub l: usize,
-    /// Secret key variance
-    pub secret_variance: u32,
-    /// First error bound
-    pub error_bound_1: BigInt,
-    /// Second error bound (for encryption)
-    pub error_bound_2: BigInt,
-    /// RNS moduli used to recreate the context
-    pub moduli: Vec<u64>,
-    /// Delta = ⌊Q^(1/ℓ)⌋ (cached for efficiency)
-    pub delta: BigUint,
-    /// Delta^(ℓ-1) (cached for efficiency)
-    pub delta_power_l_minus_1: BigUint,
-}
 
 /// PVW Parameters using fhe.rs Context and polynomial representation
 #[derive(Debug, Clone)]
@@ -580,37 +548,6 @@ impl PvwParameters {
         let delta_power_f64 = self.delta_power_l_minus_1.to_f64().unwrap_or(0.0);
 
         delta_power_f64 > total_bound
-    }
-
-    /// Convert to serializable format (when serde feature is enabled)
-    #[cfg(feature = "serde")]
-    pub fn to_serializable(&self) -> SerializablePvwParameters {
-        SerializablePvwParameters {
-            n: self.n,
-            t: self.t,
-            k: self.k,
-            l: self.l,
-            secret_variance: self.secret_variance,
-            error_bound_1: self.error_bound_1.clone(),
-            error_bound_2: self.error_bound_2.clone(),
-            moduli: self.moduli().to_vec(),
-            delta: self.delta.clone(),
-            delta_power_l_minus_1: self.delta_power_l_minus_1.clone(),
-        }
-    }
-
-    /// Create from serializable format (when serde feature is enabled)
-    #[cfg(feature = "serde")]
-    pub fn from_serializable(serializable: SerializablePvwParameters) -> Result<Self> {
-        Self::new(
-            serializable.n,
-            serializable.k,
-            serializable.l,
-            &serializable.moduli,
-            serializable.secret_variance,
-            serializable.error_bound_1,
-            serializable.error_bound_2,
-        )
     }
 
     /// Get suggested parameters that satisfy the correctness condition

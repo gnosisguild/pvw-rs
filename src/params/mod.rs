@@ -9,10 +9,6 @@ pub use crate::errors::{PvwError, PvwResult};
 pub use crs::PvwCrs;
 pub use parameters::{PvwParameters, PvwParametersBuilder, Result};
 
-// Re-export serializable types when serde feature is enabled
-#[cfg(feature = "serde")]
-pub use parameters::SerializablePvwParameters;
-
 /// Re-export parameter-related types and functions
 pub mod prelude {
     pub use super::*;

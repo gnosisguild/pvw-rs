@@ -1,6 +1,5 @@
 use fhe_math::rq::Poly;
 use fhe_math::rq::Representation;
-use fhe_traits::Serialize;
 use num_bigint::BigInt;
 use num_bigint::BigUint;
 use num_traits::One;
@@ -247,22 +246,6 @@ mod tests {
         // Test mutable access
         assert!(crs.get_mut(0, 0).is_some());
         assert!(crs.get_mut(params.k, 0).is_none());
-    }
-
-    #[test]
-    fn test_serialization() {
-        let params = create_test_params();
-        let mut rng = thread_rng();
-
-        let crs = PvwCrs::new(&params, &mut rng).unwrap();
-
-        // Test serialization doesn't panic
-        let bytes = crs.to_bytes();
-        assert!(!bytes.is_empty());
-
-        // Should start with the dimension
-        let k_bytes = (params.k as u32).to_le_bytes();
-        assert_eq!(&bytes[0..4], &k_bytes);
     }
 
     #[test]
