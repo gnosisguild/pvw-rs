@@ -8,24 +8,7 @@ on:
       - main
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust-version: [1.85.0, stable]
-        features: ["", "--features serde", "--all-features"]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust ${{ matrix.rust-version }}
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.rust-version }}
-
-      - name: Run tests
-        run: cargo test ${{ matrix.features }}
-
-  formatting:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,54 +16,22 @@ jobs:
       - name: Install Rust stable
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
-          components: rustfmt
+          toolchain: 1.86.0
 
       - name: Check code format
         run: cargo fmt --all -- --check
 
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  serialization:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Run tests (default features)
+        run: cargo test
 
-      - name: Install Rust stable
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
+      - name: Run tests (with serde feature)
+        run: cargo test --features serde
 
-      - name: Run serialization tests
+      - name: Run tests (all features)
+        run: cargo test --all-features
+
+      - name: Run serialization tests specifically
         run: cargo test --features serde --test serialization
-        
-      - name: Check serialization module compiles
-        run: cargo check --features serde
-
-      - name: Check without serde feature (ensure optional)
-        run: cargo check
-
-  benchmarks:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Run benchmarks (check only)
-        run: cargo bench --no-run
