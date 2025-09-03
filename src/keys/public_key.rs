@@ -8,8 +8,6 @@ use rand::{CryptoRng, RngCore};
 use rayon::prelude::*;
 use std::sync::Arc;
 
-
-
 /// Individual party in the PVSS protocol
 ///
 /// Each party manages their own secret key and has a unique index.
@@ -99,8 +97,6 @@ impl Party {
     pub fn secret_key(&self) -> &SecretKey {
         &self.secret_key
     }
-
-
 }
 
 impl PublicKey {

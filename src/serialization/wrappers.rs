@@ -42,17 +42,19 @@ impl SerializablePvwParameters {
             error_bound_2: params.error_bound_2.to_string(),
         }
     }
-    
+
     /// Convert back to PvwParameters
     pub fn to_params(&self) -> PvwResult<Arc<PvwParameters>> {
         use num_bigint::BigInt;
         use std::str::FromStr;
-        
-        let error_bound_1 = BigInt::from_str(&self.error_bound_1)
-            .map_err(|e| crate::errors::PvwError::InvalidFormat(format!("Invalid error_bound_1: {}", e)))?;
-        let error_bound_2 = BigInt::from_str(&self.error_bound_2)
-            .map_err(|e| crate::errors::PvwError::InvalidFormat(format!("Invalid error_bound_2: {}", e)))?;
-            
+
+        let error_bound_1 = BigInt::from_str(&self.error_bound_1).map_err(|e| {
+            crate::errors::PvwError::InvalidFormat(format!("Invalid error_bound_1: {}", e))
+        })?;
+        let error_bound_2 = BigInt::from_str(&self.error_bound_2).map_err(|e| {
+            crate::errors::PvwError::InvalidFormat(format!("Invalid error_bound_2: {}", e))
+        })?;
+
         PvwParameters::builder()
             .set_parties(self.n)
             .set_dimension(self.k)
@@ -81,32 +83,35 @@ impl SerializablePvwCrs {
     /// Create from PvwCrs
     pub fn from_crs(crs: &PvwCrs) -> Self {
         // Convert Array2 to Vec<Vec<Poly>>
-        let matrix = crs.matrix.outer_iter()
+        let matrix = crs
+            .matrix
+            .outer_iter()
             .map(|row| row.iter().cloned().collect())
             .collect();
-            
+
         Self {
             matrix,
             params: SerializablePvwParameters::from_params(&crs.params),
         }
     }
-    
+
     /// Convert back to PvwCrs
     pub fn to_crs(&self) -> PvwResult<PvwCrs> {
         let params = self.params.to_params()?;
-        
+
         // Convert Vec<Vec<Poly>> back to Array2
         let rows = self.matrix.len();
         let cols = if rows > 0 { self.matrix[0].len() } else { 0 };
-        
+
         let mut flat_data = Vec::new();
         for row in &self.matrix {
             flat_data.extend(row.iter().cloned());
         }
-        
-        let matrix = Array2::from_shape_vec((rows, cols), flat_data)
-            .map_err(|e| crate::errors::PvwError::InvalidFormat(format!("Failed to create matrix: {}", e)))?;
-        
+
+        let matrix = Array2::from_shape_vec((rows, cols), flat_data).map_err(|e| {
+            crate::errors::PvwError::InvalidFormat(format!("Failed to create matrix: {}", e))
+        })?;
+
         Ok(PvwCrs { matrix, params })
     }
 }
@@ -128,7 +133,7 @@ impl SerializableSecretKey {
             params: SerializablePvwParameters::from_params(&secret_key.params),
         }
     }
-    
+
     /// Convert back to SecretKey
     pub fn to_secret_key(&self) -> PvwResult<SecretKey> {
         let params = self.params.to_params()?;
@@ -154,7 +159,7 @@ impl SerializablePublicKey {
             params: SerializablePvwParameters::from_params(&public_key.params),
         }
     }
-    
+
     /// Convert back to PublicKey  
     pub fn to_public_key(&self) -> PvwResult<PublicKey> {
         let params = self.params.to_params()?;
@@ -183,10 +188,12 @@ impl SerializableGlobalPublicKey {
     /// Create from GlobalPublicKey
     pub fn from_global_public_key(global_public_key: &GlobalPublicKey) -> Self {
         // Convert Array2 to Vec<Vec<Poly>>
-        let matrix = global_public_key.matrix.outer_iter()
+        let matrix = global_public_key
+            .matrix
+            .outer_iter()
             .map(|row| row.iter().cloned().collect())
             .collect();
-            
+
         Self {
             matrix,
             crs: SerializablePvwCrs::from_crs(&global_public_key.crs),
@@ -194,29 +201,30 @@ impl SerializableGlobalPublicKey {
             params: SerializablePvwParameters::from_params(&global_public_key.params),
         }
     }
-    
+
     /// Convert back to GlobalPublicKey
     pub fn to_global_public_key(&self) -> PvwResult<GlobalPublicKey> {
         let params = self.params.to_params()?;
         let crs = self.crs.to_crs()?;
-        
+
         // Convert Vec<Vec<Poly>> back to Array2
         let rows = self.matrix.len();
         let cols = if rows > 0 { self.matrix[0].len() } else { 0 };
-        
+
         let mut flat_data = Vec::new();
         for row in &self.matrix {
             flat_data.extend(row.iter().cloned());
         }
-        
-        let matrix = Array2::from_shape_vec((rows, cols), flat_data)
-            .map_err(|e| crate::errors::PvwError::InvalidFormat(format!("Failed to create matrix: {}", e)))?;
-        
-        Ok(GlobalPublicKey { 
-            matrix, 
-            crs, 
+
+        let matrix = Array2::from_shape_vec((rows, cols), flat_data).map_err(|e| {
+            crate::errors::PvwError::InvalidFormat(format!("Failed to create matrix: {}", e))
+        })?;
+
+        Ok(GlobalPublicKey {
+            matrix,
+            crs,
             num_keys: self.num_keys,
-            params 
+            params,
         })
     }
 }
@@ -243,7 +251,7 @@ impl SerializablePvwCiphertext {
             params: SerializablePvwParameters::from_params(&ciphertext.params),
         }
     }
-    
+
     /// Convert back to PvwCiphertext
     pub fn to_ciphertext(&self) -> PvwResult<PvwCiphertext> {
         let params = self.params.to_params()?;

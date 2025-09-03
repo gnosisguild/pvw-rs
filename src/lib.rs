@@ -56,8 +56,8 @@ pub mod prelude {
     // Re-export serde wrappers when serde feature is enabled
     #[cfg(feature = "serde")]
     pub use crate::serialization::{
+        SerializableGlobalPublicKey, SerializablePublicKey, SerializablePvwCiphertext,
         SerializablePvwCrs, SerializablePvwParameters, SerializableSecretKey,
-        SerializablePublicKey, SerializableGlobalPublicKey, SerializablePvwCiphertext
     };
 }
 

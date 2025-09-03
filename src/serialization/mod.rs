@@ -14,13 +14,13 @@
 //! ```rust
 //! use pvw::prelude::*;
 //! use pvw::serde::wrappers::*;
-//! 
+//!
 //! // Create a serializable wrapper
 //! let serializable_params = SerializablePvwParameters::from_params(&params);
-//! 
+//!
 //! // Serialize to JSON
 //! let json = serde_json::to_string(&serializable_params)?;
-//! 
+//!
 //! // Deserialize from JSON
 //! let deserialized: SerializablePvwParameters = serde_json::from_str(&json)?;
 //! let reconstructed_params = deserialized.to_params()?;
@@ -32,6 +32,6 @@ pub mod wrappers;
 // Re-export all public types for convenience
 pub use poly::{PolyWithContext, VecPolyWithContext, VecVecPolyWithContext};
 pub use wrappers::{
-    SerializablePvwCiphertext, SerializablePvwCrs, SerializablePvwParameters,
-    SerializableGlobalPublicKey, SerializablePublicKey, SerializableSecretKey,
+    SerializableGlobalPublicKey, SerializablePublicKey, SerializablePvwCiphertext,
+    SerializablePvwCrs, SerializablePvwParameters, SerializableSecretKey,
 };

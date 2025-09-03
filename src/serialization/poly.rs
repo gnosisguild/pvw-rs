@@ -4,11 +4,10 @@
 //! by embedding the necessary context information directly in the serialized data.
 
 use fhe_math::rq::{Context, Poly, Representation};
-use fhe_traits::{Serialize as FheSerialize, DeserializeWithContext};
+use fhe_traits::{DeserializeWithContext, Serialize as FheSerialize};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde::de::{self, Visitor, SeqAccess, MapAccess};
 use std::fmt;
-
 
 /// Serializable representation of a Poly that includes context information
 /// We need custom serialization logic because:
@@ -33,7 +32,7 @@ impl Serialize for PolyData {
         S: Serializer,
     {
         use serde::ser::SerializeStruct;
-        
+
         let mut state = serializer.serialize_struct("PolyData", 4)?;
         state.serialize_field("bytes", &self.bytes)?;
         state.serialize_field("moduli", &self.moduli)?;
@@ -50,7 +49,12 @@ impl<'de> Deserialize<'de> for PolyData {
     {
         #[derive(Deserialize)]
         #[serde(field_identifier, rename_all = "lowercase")]
-        enum Field { Bytes, Moduli, Degree, Representation }
+        enum Field {
+            Bytes,
+            Moduli,
+            Degree,
+            Representation,
+        }
 
         struct PolyDataVisitor;
 
@@ -65,15 +69,24 @@ impl<'de> Deserialize<'de> for PolyData {
             where
                 V: SeqAccess<'de>,
             {
-                let bytes = seq.next_element()?
+                let bytes = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                let moduli = seq.next_element()?
+                let moduli = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-                let degree = seq.next_element()?
+                let degree = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(2, &self))?;
-                let representation = seq.next_element()?
+                let representation = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(3, &self))?;
-                Ok(PolyData { bytes, moduli, degree, representation })
+                Ok(PolyData {
+                    bytes,
+                    moduli,
+                    degree,
+                    representation,
+                })
             }
 
             fn visit_map<V>(self, mut map: V) -> Result<PolyData, V::Error>
@@ -84,7 +97,7 @@ impl<'de> Deserialize<'de> for PolyData {
                 let mut moduli = None;
                 let mut degree = None;
                 let mut representation = None;
-                
+
                 while let Some(key) = map.next_key()? {
                     match key {
                         Field::Bytes => {
@@ -113,13 +126,19 @@ impl<'de> Deserialize<'de> for PolyData {
                         }
                     }
                 }
-                
+
                 let bytes = bytes.ok_or_else(|| de::Error::missing_field("bytes"))?;
                 let moduli = moduli.ok_or_else(|| de::Error::missing_field("moduli"))?;
                 let degree = degree.ok_or_else(|| de::Error::missing_field("degree"))?;
-                let representation = representation.ok_or_else(|| de::Error::missing_field("representation"))?;
-                
-                Ok(PolyData { bytes, moduli, degree, representation })
+                let representation =
+                    representation.ok_or_else(|| de::Error::missing_field("representation"))?;
+
+                Ok(PolyData {
+                    bytes,
+                    moduli,
+                    degree,
+                    representation,
+                })
             }
         }
 
@@ -136,7 +155,7 @@ impl PolyData {
             Representation::Ntt => "Ntt".to_string(),
             Representation::NttShoup => "NttShoup".to_string(),
         };
-        
+
         Self {
             bytes: poly.to_bytes(),           // ← Uses fhe.rs serialization
             moduli: poly.ctx.moduli.to_vec(), // ← Extract context info
@@ -144,15 +163,15 @@ impl PolyData {
             representation,                   // ← Convert enum to string
         }
     }
-    
+
     /// Reconstruct a Poly from PolyData
     fn to_poly(&self) -> Result<Poly, Box<dyn std::error::Error>> {
         // Reconstruct the context
         let context = Context::new_arc(&self.moduli, self.degree)?;
-        
-        // Deserialize the polynomial  
+
+        // Deserialize the polynomial
         let poly = Poly::from_bytes(&self.bytes, &context)?;
-        
+
         Ok(poly)
     }
 }
@@ -169,7 +188,7 @@ impl PolyWithContext {
         let data = PolyData::from_poly(poly);
         data.serialize(serializer)
     }
-    
+
     /// Deserialize a single Poly
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Poly, D::Error>
     where
@@ -192,7 +211,7 @@ impl VecPolyWithContext {
         let poly_data: Vec<PolyData> = polys.iter().map(PolyData::from_poly).collect();
         poly_data.serialize(serializer)
     }
-    
+
     /// Deserialize a Vec<Poly>
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Poly>, D::Error>
     where
@@ -221,7 +240,7 @@ impl VecVecPolyWithContext {
             .collect();
         matrix_data.serialize(serializer)
     }
-    
+
     /// Deserialize a Vec<Vec<Poly>>
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Vec<Poly>>, D::Error>
     where
