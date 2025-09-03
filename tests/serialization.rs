@@ -7,7 +7,6 @@
 mod tests {
     use pvw::prelude::*;
     use rand::thread_rng;
-    use serde_json;
 
     /// Create test parameters for use in serialization tests
     fn create_test_params() -> std::sync::Arc<PvwParameters> {

@@ -49,10 +49,10 @@ impl SerializablePvwParameters {
         use std::str::FromStr;
 
         let error_bound_1 = BigInt::from_str(&self.error_bound_1).map_err(|e| {
-            crate::errors::PvwError::InvalidFormat(format!("Invalid error_bound_1: {}", e))
+            crate::errors::PvwError::InvalidFormat(format!("Invalid error_bound_1: {e}"))
         })?;
         let error_bound_2 = BigInt::from_str(&self.error_bound_2).map_err(|e| {
-            crate::errors::PvwError::InvalidFormat(format!("Invalid error_bound_2: {}", e))
+            crate::errors::PvwError::InvalidFormat(format!("Invalid error_bound_2: {e}"))
         })?;
 
         PvwParameters::builder()
@@ -109,7 +109,7 @@ impl SerializablePvwCrs {
         }
 
         let matrix = Array2::from_shape_vec((rows, cols), flat_data).map_err(|e| {
-            crate::errors::PvwError::InvalidFormat(format!("Failed to create matrix: {}", e))
+            crate::errors::PvwError::InvalidFormat(format!("Failed to create matrix: {e}"))
         })?;
 
         Ok(PvwCrs { matrix, params })
@@ -217,7 +217,7 @@ impl SerializableGlobalPublicKey {
         }
 
         let matrix = Array2::from_shape_vec((rows, cols), flat_data).map_err(|e| {
-            crate::errors::PvwError::InvalidFormat(format!("Failed to create matrix: {}", e))
+            crate::errors::PvwError::InvalidFormat(format!("Failed to create matrix: {e}"))
         })?;
 
         Ok(GlobalPublicKey {

@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .set_error_bounds_u32(suggested_bound1, suggested_bound2)
         .build_arc()?;
 
-    println!("{:?}", params);
+    println!("{params:?}");
     // Display parameters
     println!("⚙️  {}", style("PVW Parameters:").blue().bold());
     println!(
@@ -88,7 +88,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         parties.push(party);
     }
 
-    println!("{:?}", parties);
+    println!("{parties:?}");
     // Each party creates their vector of values to distribute
     let mut all_party_vectors = Vec::new();
     for party_id in 0..num_parties {

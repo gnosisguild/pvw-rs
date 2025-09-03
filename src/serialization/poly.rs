@@ -142,7 +142,7 @@ impl<'de> Deserialize<'de> for PolyData {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &["bytes", "moduli", "degree", "representation"];
+        const FIELDS: &[&str] = &["bytes", "moduli", "degree", "representation"];
         deserializer.deserialize_struct("PolyData", FIELDS, PolyDataVisitor)
     }
 }
@@ -204,7 +204,7 @@ pub struct VecPolyWithContext;
 
 impl VecPolyWithContext {
     /// Serialize a Vec<Poly>
-    pub fn serialize<S>(polys: &Vec<Poly>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(polys: &[Poly], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -230,7 +230,7 @@ pub struct VecVecPolyWithContext;
 
 impl VecVecPolyWithContext {
     /// Serialize a Vec<Vec<Poly>>
-    pub fn serialize<S>(matrix: &Vec<Vec<Poly>>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(matrix: &[Vec<Poly>], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
