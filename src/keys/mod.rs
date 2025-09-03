@@ -9,6 +9,12 @@ pub mod secret_key;
 pub use public_key::{GlobalPublicKey, Party, PublicKey};
 pub use secret_key::SecretKey;
 
+// Re-export serializable types when serde feature is enabled
+#[cfg(feature = "serde")]
+pub use public_key::SerializableParty;
+#[cfg(feature = "serde")]
+pub use secret_key::SerializableSecretKey;
+
 /// Re-export key-related types and functions
 pub mod prelude {
     pub use super::*;

@@ -6,6 +6,20 @@ use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize as SerdeSerialize};
+
+/// Serializable representation of a secret key
+///
+/// Contains only the coefficient matrix, which can be used to reconstruct
+/// a SecretKey when combined with appropriate PvwParameters.
+#[cfg(feature = "serde")]
+#[derive(Debug, Clone, SerdeSerialize, Deserialize)]
+pub struct SerializableSecretKey {
+    /// Secret key coefficients (k × l matrix)
+    pub secret_coeffs: Vec<Vec<i64>>,
+}
+
 /// PVW Secret Key using coefficient representation
 ///
 /// Stores secret key coefficients directly from CBD sampling for efficiency.
@@ -277,6 +291,23 @@ impl SecretKey {
     /// Cloned coefficient matrix
     pub fn serialize_coefficients(&self) -> Vec<Vec<i64>> {
         self.secret_coeffs.clone()
+    }
+
+    /// Convert to serializable format (when serde feature is enabled)
+    #[cfg(feature = "serde")]
+    pub fn to_serializable(&self) -> SerializableSecretKey {
+        SerializableSecretKey {
+            secret_coeffs: self.secret_coeffs.clone(),
+        }
+    }
+
+    /// Create from serializable format (when serde feature is enabled)
+    #[cfg(feature = "serde")]
+    pub fn from_serializable(
+        serializable: SerializableSecretKey,
+        params: Arc<PvwParameters>,
+    ) -> Result<Self> {
+        Self::from_coefficients(params, serializable.secret_coeffs)
     }
 
     /// Get coefficient statistics for debugging and analysis

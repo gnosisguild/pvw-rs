@@ -2,15 +2,22 @@ use crate::errors::PvwError;
 use crate::keys::public_key::GlobalPublicKey;
 use crate::params::parameters::{PvwParameters, Result};
 use fhe_math::rq::{Poly, Representation};
+use fhe_traits::{Serialize, DeserializeWithContext};
 use fhe_util::sample_vec_cbd;
 use rayon::prelude::*;
 use std::sync::Arc;
+
+
 
 /// Ciphertext output of PVW encryption for PVSS
 ///
 /// Represents an encrypted vector where each component can be decrypted by
 /// the corresponding party. Used in PVSS to distribute secret shares to
 /// multiple parties simultaneously.
+///
+/// Note: This type contains `Poly` types from fhe.rs which cannot be directly
+/// serialized with serde. Use the `to_bytes()` method from `fhe_traits::Serialize`
+/// for serialization instead.
 #[derive(Debug, Clone)]
 pub struct PvwCiphertext {
     /// c1 = A * r + e1  ∈ R_q^k (k polynomials)
@@ -91,6 +98,155 @@ impl PvwCiphertext {
     /// Get all c2 components
     pub fn c2_components(&self) -> &[Poly] {
         &self.c2
+    }
+}
+
+impl Serialize for PvwCiphertext {
+    /// Serialize the ciphertext to bytes
+    ///
+    /// Format: [k as u32][n as u32][c1 polynomials][c2 polynomials]
+    /// Each polynomial is prefixed with its byte length.
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        
+        // Serialize dimensions for validation
+        bytes.extend_from_slice(&(self.params.k as u32).to_le_bytes());
+        bytes.extend_from_slice(&(self.params.n as u32).to_le_bytes());
+        
+        // Serialize c1 polynomials
+        for poly in &self.c1 {
+            let poly_bytes = poly.to_bytes();
+            bytes.extend_from_slice(&(poly_bytes.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&poly_bytes);
+        }
+        
+        // Serialize c2 polynomials
+        for poly in &self.c2 {
+            let poly_bytes = poly.to_bytes();
+            bytes.extend_from_slice(&(poly_bytes.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&poly_bytes);
+        }
+        
+        bytes
+    }
+}
+
+impl PvwCiphertext {
+    /// Deserialize a ciphertext from bytes with parameters
+    ///
+    /// This method requires PvwParameters to properly reconstruct the
+    /// polynomials with the correct context.
+    pub fn from_bytes_with_params(
+        bytes: &[u8],
+        params: Arc<PvwParameters>
+    ) -> Result<Self> {
+        if bytes.len() < 8 {
+            return Err(PvwError::InsufficientData { 
+                expected: 8, 
+                actual: bytes.len() 
+            });
+        }
+        
+        let mut offset = 0;
+        
+        // Read dimensions
+        let k = u32::from_le_bytes([
+            bytes[offset], bytes[offset + 1], 
+            bytes[offset + 2], bytes[offset + 3]
+        ]) as usize;
+        offset += 4;
+        
+        let n = u32::from_le_bytes([
+            bytes[offset], bytes[offset + 1], 
+            bytes[offset + 2], bytes[offset + 3]
+        ]) as usize;
+        offset += 4;
+        
+        // Validate dimensions
+        if k != params.k || n != params.n {
+            return Err(PvwError::InvalidFormat(format!(
+                "Ciphertext dimension mismatch: expected k={}, n={}, found k={}, n={}", 
+                params.k, params.n, k, n
+            )));
+        }
+        
+        let mut c1 = Vec::with_capacity(k);
+        let mut c2 = Vec::with_capacity(n);
+        
+        // Deserialize c1 polynomials
+        for i in 0..k {
+            if offset + 4 > bytes.len() {
+                return Err(PvwError::InsufficientData { 
+                    expected: offset + 4, 
+                    actual: bytes.len() 
+                });
+            }
+            
+            // Read polynomial length
+            let poly_len = u32::from_le_bytes([
+                bytes[offset], bytes[offset + 1], 
+                bytes[offset + 2], bytes[offset + 3]
+            ]) as usize;
+            offset += 4;
+            
+            if offset + poly_len > bytes.len() {
+                return Err(PvwError::InsufficientData { 
+                    expected: offset + poly_len, 
+                    actual: bytes.len() 
+                });
+            }
+            
+            // Deserialize polynomial
+            let poly_bytes = &bytes[offset..offset + poly_len];
+            let poly = Poly::from_bytes(poly_bytes, &params.context)
+                .map_err(|e| PvwError::DeserializationError(format!("Failed to deserialize c1[{}]: {:?}", i, e)))?;
+            
+            c1.push(poly);
+            offset += poly_len;
+        }
+        
+        // Deserialize c2 polynomials
+        for i in 0..n {
+            if offset + 4 > bytes.len() {
+                return Err(PvwError::InsufficientData { 
+                    expected: offset + 4, 
+                    actual: bytes.len() 
+                });
+            }
+            
+            // Read polynomial length
+            let poly_len = u32::from_le_bytes([
+                bytes[offset], bytes[offset + 1], 
+                bytes[offset + 2], bytes[offset + 3]
+            ]) as usize;
+            offset += 4;
+            
+            if offset + poly_len > bytes.len() {
+                return Err(PvwError::InsufficientData { 
+                    expected: offset + poly_len, 
+                    actual: bytes.len() 
+                });
+            }
+            
+            // Deserialize polynomial
+            let poly_bytes = &bytes[offset..offset + poly_len];
+            let poly = Poly::from_bytes(poly_bytes, &params.context)
+                .map_err(|e| PvwError::DeserializationError(format!("Failed to deserialize c2[{}]: {:?}", i, e)))?;
+            
+            c2.push(poly);
+            offset += poly_len;
+        }
+        
+        let ciphertext = Self {
+            c1,
+            c2,
+            params,
+        };
+        
+        // Validate the reconstructed ciphertext
+        ciphertext.validate()?;
+        
+        Ok(ciphertext)
     }
 }
 

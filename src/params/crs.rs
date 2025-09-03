@@ -1,11 +1,13 @@
 use super::parameters::{PvwParameters, Result};
 use crate::errors::PvwError;
 use fhe_math::rq::{Poly, Representation};
-use fhe_traits::Serialize;
+use fhe_traits::{Serialize, DeserializeWithContext};
 use ndarray::Array2;
 use rand::{CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
+
+
 
 /// Common Reference String for PVW encryption
 /// Contains a k × k matrix of polynomials in R_q used for multi-party encryption
@@ -246,5 +248,81 @@ impl Serialize for PvwCrs {
         }
 
         bytes
+    }
+}
+
+impl PvwCrs {
+    /// Deserialize CRS from bytes with parameters
+    ///
+    /// This method requires PvwParameters to properly reconstruct the polynomial
+    /// matrix with the correct context.
+    pub fn from_bytes_with_params(
+        bytes: &[u8],
+        params: Arc<PvwParameters>
+    ) -> Result<Self> {
+        if bytes.len() < 4 {
+            return Err(PvwError::InsufficientData { 
+                expected: 4, 
+                actual: bytes.len() 
+            });
+        }
+        
+        let mut offset = 0;
+        
+        // Read matrix dimension
+        let k = u32::from_le_bytes([
+            bytes[offset], bytes[offset + 1], 
+            bytes[offset + 2], bytes[offset + 3]
+        ]) as usize;
+        offset += 4;
+        
+        if k != params.k {
+            return Err(PvwError::InvalidFormat(format!(
+                "CRS dimension mismatch: expected k={}, found k={}", params.k, k
+            )));
+        }
+        
+        // Initialize matrix with zero polynomials
+        let zero_poly = Poly::zero(&params.context, Representation::Ntt);
+        let mut matrix = Array2::from_elem((k, k), zero_poly);
+        
+        // Deserialize each polynomial in row-major order
+        for i in 0..k {
+            for j in 0..k {
+                if offset + 4 > bytes.len() {
+                    return Err(PvwError::InsufficientData { 
+                        expected: offset + 4, 
+                        actual: bytes.len() 
+                    });
+                }
+                
+                // Read polynomial length
+                let poly_len = u32::from_le_bytes([
+                    bytes[offset], bytes[offset + 1], 
+                    bytes[offset + 2], bytes[offset + 3]
+                ]) as usize;
+                offset += 4;
+                
+                if offset + poly_len > bytes.len() {
+                    return Err(PvwError::InsufficientData { 
+                        expected: offset + poly_len, 
+                        actual: bytes.len() 
+                    });
+                }
+                
+                // Deserialize polynomial
+                let poly_bytes = &bytes[offset..offset + poly_len];
+                let poly = Poly::from_bytes(poly_bytes, &params.context)
+                    .map_err(|e| PvwError::DeserializationError(format!("Failed to deserialize CRS polynomial ({}, {}): {:?}", i, j, e)))?;
+                
+                matrix[(i, j)] = poly;
+                offset += poly_len;
+            }
+        }
+        
+        Ok(Self {
+            matrix,
+            params,
+        })
     }
 }

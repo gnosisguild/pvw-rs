@@ -49,6 +49,12 @@ pub mod prelude {
 
     // Re-export traits
     pub use crate::traits::{Encode, Serialize, Validate};
+
+    // Re-export serializable types when serde feature is enabled
+    #[cfg(feature = "serde")]
+    pub use crate::keys::{SerializableParty, SerializableSecretKey};
+    #[cfg(feature = "serde")]
+    pub use crate::params::SerializablePvwParameters;
 }
 
 // Re-export commonly used types at the top level for backward compatibility
@@ -56,3 +62,9 @@ pub use errors::{PvwError, PvwResult};
 pub use keys::{GlobalPublicKey, Party, PublicKey, SecretKey};
 pub use params::PvwCrs;
 pub use params::{PvwParameters, PvwParametersBuilder, Result};
+
+// Re-export serializable types when serde feature is enabled
+#[cfg(feature = "serde")]
+pub use keys::{SerializableParty, SerializableSecretKey};
+#[cfg(feature = "serde")]
+pub use params::SerializablePvwParameters;
