@@ -268,17 +268,6 @@ impl SecretKey {
         Ok(sk)
     }
 
-    /// Serialize coefficients for storage or transmission
-    ///
-    /// Creates a copy of the coefficient matrix suitable for serialization.
-    /// The result can be used with `from_coefficients` to reconstruct the key.
-    ///
-    /// # Returns
-    /// Cloned coefficient matrix
-    pub fn serialize_coefficients(&self) -> Vec<Vec<i64>> {
-        self.secret_coeffs.clone()
-    }
-
     /// Get coefficient statistics for debugging and analysis
     ///
     /// Computes basic statistics over all coefficients in the secret key.
@@ -299,5 +288,39 @@ impl SecretKey {
         let mean = all_coeffs.iter().sum::<i64>() as f64 / all_coeffs.len() as f64;
 
         (min, max, mean)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for SecretKey {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let mut state = serializer.serialize_struct("SecretKey", 2)?;
+        state.serialize_field("coefficients", &self.secret_coeffs)?;
+        state.serialize_field("params", &*self.params)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for SecretKey {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct DeserializedSecretKey {
+            coefficients: Vec<Vec<i64>>,
+            params: PvwParameters,
+        }
+
+        let data = DeserializedSecretKey::deserialize(deserializer)?;
+        let params = Arc::new(data.params);
+
+        Self::from_coefficients(params, data.coefficients).map_err(serde::de::Error::custom)
     }
 }

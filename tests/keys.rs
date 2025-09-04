@@ -482,24 +482,6 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization() {
-        let params = create_test_params();
-        let mut rng = thread_rng();
-
-        let sk = SecretKey::random(&params, &mut rng).unwrap();
-
-        // Test serialization
-        let serialized = sk.serialize_coefficients();
-        assert_eq!(serialized, sk.secret_coeffs);
-
-        // Test round-trip
-        let sk2 = SecretKey::from_coefficients(params, serialized).unwrap();
-        assert_eq!(sk.secret_coeffs, sk2.secret_coeffs);
-
-        println!("✓ Serialization test passed");
-    }
-
-    #[test]
     fn test_zeroize_implementation() {
         let params = create_test_params();
         let mut rng = thread_rng();

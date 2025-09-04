@@ -1,10 +1,8 @@
-//! Comprehensive tests for PVW serialization
-//!
-//! These tests verify that all PVW types can be serialized and deserialized correctly
-//! while preserving their mathematical properties and functionality.
+//! Tests for PVW direct serialization using bincode
 
 #[cfg(all(test, feature = "serde"))]
 mod tests {
+    use fhe_traits::Serialize;
     use pvw::prelude::*;
     use rand::thread_rng;
 
@@ -25,16 +23,10 @@ mod tests {
     fn test_pvw_parameters_serialization() {
         let params = create_test_params();
 
-        // Test serialization
-        let serializable = SerializablePvwParameters::from_params(&params);
-        let json = serde_json::to_string(&serializable).expect("Failed to serialize parameters");
-
-        // Test deserialization
-        let deserialized: SerializablePvwParameters =
-            serde_json::from_str(&json).expect("Failed to deserialize parameters");
-        let reconstructed = deserialized
-            .to_params()
-            .expect("Failed to reconstruct parameters");
+        // Test binary serialization with bincode
+        let bytes = bincode::serialize(&*params).expect("Failed to serialize");
+        let reconstructed: PvwParameters =
+            bincode::deserialize(&bytes).expect("Failed to deserialize");
 
         // Verify properties
         assert_eq!(params.n, reconstructed.n);
@@ -48,29 +40,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pvw_crs_serialization() {
-        let params = create_test_params();
-        let mut rng = thread_rng();
-
-        // Create CRS
-        let crs = PvwCrs::new(&params, &mut rng).expect("Failed to create CRS");
-
-        // Test serialization
-        let serializable = SerializablePvwCrs::from_crs(&crs);
-        let json = serde_json::to_string(&serializable).expect("Failed to serialize CRS");
-
-        // Test deserialization
-        let deserialized: SerializablePvwCrs =
-            serde_json::from_str(&json).expect("Failed to deserialize CRS");
-        let reconstructed = deserialized.to_crs().expect("Failed to reconstruct CRS");
-
-        // Verify matrix dimensions
-        assert_eq!(crs.matrix.shape(), reconstructed.matrix.shape());
-        assert_eq!(crs.params.n, reconstructed.params.n);
-        assert_eq!(crs.params.k, reconstructed.params.k);
-    }
-
-    #[test]
     fn test_secret_key_serialization() {
         let params = create_test_params();
         let mut rng = thread_rng();
@@ -78,21 +47,34 @@ mod tests {
         // Create secret key
         let secret_key = SecretKey::random(&params, &mut rng).expect("Failed to create secret key");
 
-        // Test serialization
-        let serializable = SerializableSecretKey::from_secret_key(&secret_key);
-        let json = serde_json::to_string(&serializable).expect("Failed to serialize secret key");
+        // Test binary serialization with bincode
+        let bytes = bincode::serialize(&secret_key).expect("Failed to serialize");
+        let reconstructed: SecretKey = bincode::deserialize(&bytes).expect("Failed to deserialize");
 
-        // Test deserialization
-        let deserialized: SerializableSecretKey =
-            serde_json::from_str(&json).expect("Failed to deserialize secret key");
-        let reconstructed = deserialized
-            .to_secret_key()
-            .expect("Failed to reconstruct secret key");
-
-        // Verify properties
+        // Verify exact coefficient equality
         assert_eq!(secret_key.coefficients(), reconstructed.coefficients());
+
+        // Verify all parameter fields are identical
         assert_eq!(secret_key.params.n, reconstructed.params.n);
         assert_eq!(secret_key.params.k, reconstructed.params.k);
+        assert_eq!(secret_key.params.l, reconstructed.params.l);
+        assert_eq!(secret_key.params.moduli(), reconstructed.params.moduli());
+        assert_eq!(
+            secret_key.params.context.degree,
+            reconstructed.params.context.degree
+        );
+        assert_eq!(
+            secret_key.params.secret_variance,
+            reconstructed.params.secret_variance
+        );
+        assert_eq!(
+            secret_key.params.error_bound_1,
+            reconstructed.params.error_bound_1
+        );
+        assert_eq!(
+            secret_key.params.error_bound_2,
+            reconstructed.params.error_bound_2
+        );
     }
 
     #[test]
@@ -106,24 +88,81 @@ mod tests {
         let public_key =
             PublicKey::generate(&secret_key, &crs, &mut rng).expect("Failed to create public key");
 
-        // Test serialization
-        let serializable = SerializablePublicKey::from_public_key(&public_key);
-        let json = serde_json::to_string(&serializable).expect("Failed to serialize public key");
+        // Test binary serialization with bincode
+        let bytes = bincode::serialize(&public_key).expect("Failed to serialize");
+        let reconstructed: PublicKey = bincode::deserialize(&bytes).expect("Failed to deserialize");
 
-        // Test deserialization
-        let deserialized: SerializablePublicKey =
-            serde_json::from_str(&json).expect("Failed to deserialize public key");
-        let reconstructed = deserialized
-            .to_public_key()
-            .expect("Failed to reconstruct public key");
-
-        // Verify properties
+        // Verify exact polynomial equality
         assert_eq!(
             public_key.key_polynomials.len(),
             reconstructed.key_polynomials.len()
         );
+        for (original, reconstructed_poly) in public_key
+            .key_polynomials
+            .iter()
+            .zip(reconstructed.key_polynomials.iter())
+        {
+            // Compare polynomial bytes to ensure exact equality
+            assert_eq!(original.to_bytes(), reconstructed_poly.to_bytes());
+        }
+
+        // Verify all parameter fields are identical
         assert_eq!(public_key.params.n, reconstructed.params.n);
         assert_eq!(public_key.params.k, reconstructed.params.k);
+        assert_eq!(public_key.params.l, reconstructed.params.l);
+        assert_eq!(public_key.params.moduli(), reconstructed.params.moduli());
+        assert_eq!(
+            public_key.params.context.degree,
+            reconstructed.params.context.degree
+        );
+        assert_eq!(
+            public_key.params.secret_variance,
+            reconstructed.params.secret_variance
+        );
+        assert_eq!(
+            public_key.params.error_bound_1,
+            reconstructed.params.error_bound_1
+        );
+        assert_eq!(
+            public_key.params.error_bound_2,
+            reconstructed.params.error_bound_2
+        );
+    }
+
+    #[test]
+    fn test_pvw_crs_serialization() {
+        let params = create_test_params();
+        let mut rng = thread_rng();
+
+        // Create CRS
+        let crs = PvwCrs::new(&params, &mut rng).expect("Failed to create CRS");
+
+        // Test binary serialization with bincode
+        let bytes = bincode::serialize(&crs).expect("Failed to serialize");
+        let reconstructed: PvwCrs = bincode::deserialize(&bytes).expect("Failed to deserialize");
+
+        // Verify exact matrix content equality
+        assert_eq!(crs.matrix.shape(), reconstructed.matrix.shape());
+        for (original, reconstructed_poly) in crs.matrix.iter().zip(reconstructed.matrix.iter()) {
+            // Compare polynomial bytes to ensure exact equality
+            assert_eq!(original.to_bytes(), reconstructed_poly.to_bytes());
+        }
+
+        // Verify all parameter fields are identical
+        assert_eq!(crs.params.n, reconstructed.params.n);
+        assert_eq!(crs.params.k, reconstructed.params.k);
+        assert_eq!(crs.params.l, reconstructed.params.l);
+        assert_eq!(crs.params.moduli(), reconstructed.params.moduli());
+        assert_eq!(
+            crs.params.context.degree,
+            reconstructed.params.context.degree
+        );
+        assert_eq!(
+            crs.params.secret_variance,
+            reconstructed.params.secret_variance
+        );
+        assert_eq!(crs.params.error_bound_1, reconstructed.params.error_bound_1);
+        assert_eq!(crs.params.error_bound_2, reconstructed.params.error_bound_2);
     }
 
     #[test]
@@ -141,22 +180,54 @@ mod tests {
             .generate_and_add(0, &secret_key, &mut rng)
             .expect("Failed to add party key");
 
-        // Test serialization
-        let serializable = SerializableGlobalPublicKey::from_global_public_key(&global_pk);
-        let json =
-            serde_json::to_string(&serializable).expect("Failed to serialize global public key");
+        // Test binary serialization with bincode
+        let bytes = bincode::serialize(&global_pk).expect("Failed to serialize");
+        let reconstructed: GlobalPublicKey =
+            bincode::deserialize(&bytes).expect("Failed to deserialize");
 
-        // Test deserialization
-        let deserialized: SerializableGlobalPublicKey =
-            serde_json::from_str(&json).expect("Failed to deserialize global public key");
-        let reconstructed = deserialized
-            .to_global_public_key()
-            .expect("Failed to reconstruct global public key");
-
-        // Verify properties
+        // Verify exact matrix content equality
         assert_eq!(global_pk.matrix.shape(), reconstructed.matrix.shape());
+        for (original, reconstructed_poly) in
+            global_pk.matrix.iter().zip(reconstructed.matrix.iter())
+        {
+            // Compare polynomial bytes to ensure exact equality
+            assert_eq!(original.to_bytes(), reconstructed_poly.to_bytes());
+        }
+
+        // Verify CRS content equality
+        for (original, reconstructed_poly) in global_pk
+            .crs
+            .matrix
+            .iter()
+            .zip(reconstructed.crs.matrix.iter())
+        {
+            assert_eq!(original.to_bytes(), reconstructed_poly.to_bytes());
+        }
+
+        // Verify all other fields
         assert_eq!(global_pk.num_keys, reconstructed.num_keys);
+
+        // Verify all parameter fields are identical
         assert_eq!(global_pk.params.n, reconstructed.params.n);
+        assert_eq!(global_pk.params.k, reconstructed.params.k);
+        assert_eq!(global_pk.params.l, reconstructed.params.l);
+        assert_eq!(global_pk.params.moduli(), reconstructed.params.moduli());
+        assert_eq!(
+            global_pk.params.context.degree,
+            reconstructed.params.context.degree
+        );
+        assert_eq!(
+            global_pk.params.secret_variance,
+            reconstructed.params.secret_variance
+        );
+        assert_eq!(
+            global_pk.params.error_bound_1,
+            reconstructed.params.error_bound_1
+        );
+        assert_eq!(
+            global_pk.params.error_bound_2,
+            reconstructed.params.error_bound_2
+        );
     }
 
     #[test]
@@ -181,22 +252,46 @@ mod tests {
         let scalars: Vec<u64> = (0..params.n).map(|i| i as u64 + 1).collect();
         let ciphertext = encrypt(&scalars, &global_pk).expect("Failed to encrypt");
 
-        // Test serialization
-        let serializable = SerializablePvwCiphertext::from_ciphertext(&ciphertext);
-        let json = serde_json::to_string(&serializable).expect("Failed to serialize ciphertext");
+        // Test binary serialization with bincode
+        let bytes = bincode::serialize(&ciphertext).expect("Failed to serialize");
+        let reconstructed: PvwCiphertext =
+            bincode::deserialize(&bytes).expect("Failed to deserialize");
 
-        // Test deserialization
-        let deserialized: SerializablePvwCiphertext =
-            serde_json::from_str(&json).expect("Failed to deserialize ciphertext");
-        let reconstructed = deserialized
-            .to_ciphertext()
-            .expect("Failed to reconstruct ciphertext");
-
-        // Verify properties
+        // Verify exact ciphertext content equality
         assert_eq!(ciphertext.c1.len(), reconstructed.c1.len());
         assert_eq!(ciphertext.c2.len(), reconstructed.c2.len());
+
+        // Compare all c1 polynomials
+        for (original, reconstructed_poly) in ciphertext.c1.iter().zip(reconstructed.c1.iter()) {
+            assert_eq!(original.to_bytes(), reconstructed_poly.to_bytes());
+        }
+
+        // Compare all c2 polynomials
+        for (original, reconstructed_poly) in ciphertext.c2.iter().zip(reconstructed.c2.iter()) {
+            assert_eq!(original.to_bytes(), reconstructed_poly.to_bytes());
+        }
+
+        // Verify all parameter fields are identical
         assert_eq!(ciphertext.params.n, reconstructed.params.n);
         assert_eq!(ciphertext.params.k, reconstructed.params.k);
+        assert_eq!(ciphertext.params.l, reconstructed.params.l);
+        assert_eq!(ciphertext.params.moduli(), reconstructed.params.moduli());
+        assert_eq!(
+            ciphertext.params.context.degree,
+            reconstructed.params.context.degree
+        );
+        assert_eq!(
+            ciphertext.params.secret_variance,
+            reconstructed.params.secret_variance
+        );
+        assert_eq!(
+            ciphertext.params.error_bound_1,
+            reconstructed.params.error_bound_1
+        );
+        assert_eq!(
+            ciphertext.params.error_bound_2,
+            reconstructed.params.error_bound_2
+        );
     }
 
     #[test]
@@ -205,47 +300,86 @@ mod tests {
         let params = create_test_params();
 
         // Test with parameters
-        let serializable1 = SerializablePvwParameters::from_params(&params);
-        let json1 = serde_json::to_string(&serializable1).expect("Failed to serialize (1)");
-        let deserialized1: SerializablePvwParameters =
-            serde_json::from_str(&json1).expect("Failed to deserialize (1)");
-        let reconstructed1 = deserialized1
-            .to_params()
-            .expect("Failed to reconstruct (1)");
+        let bytes1 = bincode::serialize(&*params).expect("Failed to serialize (1)");
+        let reconstructed1: PvwParameters =
+            bincode::deserialize(&bytes1).expect("Failed to deserialize (1)");
 
         // Second round trip
-        let serializable2 = SerializablePvwParameters::from_params(&reconstructed1);
-        let json2 = serde_json::to_string(&serializable2).expect("Failed to serialize (2)");
-        let deserialized2: SerializablePvwParameters =
-            serde_json::from_str(&json2).expect("Failed to deserialize (2)");
-        let reconstructed2 = deserialized2
-            .to_params()
-            .expect("Failed to reconstruct (2)");
+        let bytes2 = bincode::serialize(&reconstructed1).expect("Failed to serialize (2)");
+        let reconstructed2: PvwParameters =
+            bincode::deserialize(&bytes2).expect("Failed to deserialize (2)");
 
         // Verify consistency
         assert_eq!(params.n, reconstructed2.n);
         assert_eq!(params.k, reconstructed2.k);
         assert_eq!(params.moduli(), reconstructed2.moduli());
-        assert_eq!(json1, json2); // JSON should be identical
+        assert_eq!(bytes1, bytes2); // Binary should be identical
     }
 
     #[test]
-    fn test_json_serialization_format() {
+    fn test_bincode_direct_usage() {
         let params = create_test_params();
-        let serializable = SerializablePvwParameters::from_params(&params);
+        let mut rng = thread_rng();
 
-        // Test JSON
-        let json = serde_json::to_string(&serializable).expect("Failed to serialize to JSON");
-        let from_json: SerializablePvwParameters =
-            serde_json::from_str(&json).expect("Failed to deserialize from JSON");
+        // Create a ciphertext
+        let crs = PvwCrs::new(&params, &mut rng).expect("Failed to create CRS");
+        let mut global_pk = GlobalPublicKey::new(crs);
 
-        // Verify result
-        let reconstructed_json = from_json
-            .to_params()
-            .expect("Failed to reconstruct from JSON");
+        for i in 0..params.n {
+            let secret_key =
+                SecretKey::random(&params, &mut rng).expect("Failed to create secret key");
+            global_pk
+                .generate_and_add(i, &secret_key, &mut rng)
+                .expect("Failed to add party key");
+        }
 
-        assert_eq!(params.n, reconstructed_json.n);
-        assert_eq!(params.k, reconstructed_json.k);
-        assert_eq!(params.moduli(), reconstructed_json.moduli());
+        let scalars: Vec<u64> = vec![42; params.n];
+        let ciphertext = encrypt(&scalars, &global_pk).expect("Failed to encrypt");
+
+        // This is exactly what the user wants - direct bincode usage
+        let bytes = bincode::serialize(&ciphertext).expect("Serialization failed");
+        let reconstructed: PvwCiphertext =
+            bincode::deserialize(&bytes).expect("Deserialization failed");
+
+        // Verify the reconstructed ciphertext is EXACTLY the same
+        assert_eq!(ciphertext.len(), reconstructed.len());
+        assert!(!reconstructed.is_empty());
+
+        // Verify exact polynomial content equality
+        for (original, reconstructed_poly) in ciphertext.c1.iter().zip(reconstructed.c1.iter()) {
+            assert_eq!(original.to_bytes(), reconstructed_poly.to_bytes());
+        }
+        for (original, reconstructed_poly) in ciphertext.c2.iter().zip(reconstructed.c2.iter()) {
+            assert_eq!(original.to_bytes(), reconstructed_poly.to_bytes());
+        }
+
+        // Verify it validates and works correctly
+        reconstructed
+            .validate()
+            .expect("Reconstructed ciphertext should be valid");
+    }
+
+    #[test]
+    fn test_serialization_deterministic() {
+        // Test that the same data always produces the same bytes
+        let params = create_test_params();
+        let mut rng = thread_rng();
+
+        // Create a secret key
+        let secret_key = SecretKey::random(&params, &mut rng).expect("Failed to create secret key");
+
+        // Serialize it multiple times
+        let bytes1 = bincode::serialize(&secret_key).expect("Failed to serialize (1)");
+        let bytes2 = bincode::serialize(&secret_key).expect("Failed to serialize (2)");
+        let bytes3 = bincode::serialize(&secret_key).expect("Failed to serialize (3)");
+
+        // All serializations should produce identical bytes
+        assert_eq!(bytes1, bytes2);
+        assert_eq!(bytes2, bytes3);
+
+        // Deserialize and verify it's still the same
+        let reconstructed: SecretKey =
+            bincode::deserialize(&bytes1).expect("Failed to deserialize");
+        assert_eq!(secret_key.coefficients(), reconstructed.coefficients());
     }
 }

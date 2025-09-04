@@ -18,9 +18,6 @@ pub mod params;
 pub mod sampling;
 pub mod traits;
 
-#[cfg(feature = "serde")]
-pub mod serialization;
-
 // Re-export main types for convenience
 pub use crypto::*;
 pub use keys::*;
@@ -52,13 +49,6 @@ pub mod prelude {
 
     // Re-export traits
     pub use crate::traits::{Encode, Serialize, Validate};
-
-    // Re-export serde wrappers when serde feature is enabled
-    #[cfg(feature = "serde")]
-    pub use crate::serialization::{
-        SerializableGlobalPublicKey, SerializablePublicKey, SerializablePvwCiphertext,
-        SerializablePvwCrs, SerializablePvwParameters, SerializableSecretKey,
-    };
 }
 
 // Re-export commonly used types at the top level for backward compatibility

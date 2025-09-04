@@ -11,10 +11,6 @@ use std::sync::Arc;
 /// Represents an encrypted vector where each component can be decrypted by
 /// the corresponding party. Used in PVSS to distribute secret shares to
 /// multiple parties simultaneously.
-///
-/// Note: This type contains `Poly` types from fhe.rs which cannot be directly
-/// serialized with serde. Use the `to_bytes()` method from `fhe_traits::Serialize`
-/// for binary serialization, or use `SerializablePvwCiphertext` for serde support.
 #[derive(Debug, Clone)]
 pub struct PvwCiphertext {
     /// c1 = A * r + e1  ∈ R_q^k (k polynomials)
@@ -297,4 +293,62 @@ pub fn encrypt_broadcast(scalar: u64, global_pk: &GlobalPublicKey) -> Result<Pvw
     let broadcast_values = vec![scalar; global_pk.params.n];
 
     encrypt(&broadcast_values, global_pk)
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for PvwCiphertext {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use fhe_traits::Serialize as FheSerialize;
+        use serde::ser::SerializeStruct;
+
+        // Serialize polynomial vectors using fhe-math's built-in serialization
+        let c1_bytes: Vec<Vec<u8>> = self.c1.iter().map(|p| p.to_bytes()).collect();
+        let c2_bytes: Vec<Vec<u8>> = self.c2.iter().map(|p| p.to_bytes()).collect();
+
+        let mut state = serializer.serialize_struct("PvwCiphertext", 3)?;
+        state.serialize_field("c1", &c1_bytes)?;
+        state.serialize_field("c2", &c2_bytes)?;
+        state.serialize_field("params", &*self.params)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PvwCiphertext {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use fhe_traits::DeserializeWithContext;
+
+        #[derive(serde::Deserialize)]
+        struct DeserializedCiphertext {
+            c1: Vec<Vec<u8>>,
+            c2: Vec<Vec<u8>>,
+            params: PvwParameters,
+        }
+
+        let data = DeserializedCiphertext::deserialize(deserializer)?;
+        let params = Arc::new(data.params);
+
+        // Deserialize polynomial vectors
+        let c1: std::result::Result<Vec<Poly>, _> = data
+            .c1
+            .into_iter()
+            .map(|bytes| Poly::from_bytes(&bytes, &params.context))
+            .collect();
+        let c2: std::result::Result<Vec<Poly>, _> = data
+            .c2
+            .into_iter()
+            .map(|bytes| Poly::from_bytes(&bytes, &params.context))
+            .collect();
+
+        let c1 = c1.map_err(serde::de::Error::custom)?;
+        let c2 = c2.map_err(serde::de::Error::custom)?;
+
+        Ok(PvwCiphertext { c1, c2, params })
+    }
 }

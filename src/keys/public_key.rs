@@ -424,3 +424,132 @@ impl GlobalPublicKey {
         Ok(polys)
     }
 }
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for PublicKey {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use fhe_traits::Serialize as FheSerialize;
+        use serde::ser::SerializeStruct;
+
+        let key_bytes: Vec<Vec<u8>> = self.key_polynomials.iter().map(|p| p.to_bytes()).collect();
+
+        let mut state = serializer.serialize_struct("PublicKey", 2)?;
+        state.serialize_field("key_polynomials", &key_bytes)?;
+        state.serialize_field("params", &*self.params)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PublicKey {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use fhe_traits::DeserializeWithContext;
+
+        #[derive(serde::Deserialize)]
+        struct DeserializedPublicKey {
+            key_polynomials: Vec<Vec<u8>>,
+            params: PvwParameters,
+        }
+
+        let data = DeserializedPublicKey::deserialize(deserializer)?;
+        let params = Arc::new(data.params);
+
+        let key_polynomials: std::result::Result<Vec<Poly>, _> = data
+            .key_polynomials
+            .into_iter()
+            .map(|bytes| Poly::from_bytes(&bytes, &params.context))
+            .collect();
+
+        let key_polynomials = key_polynomials.map_err(serde::de::Error::custom)?;
+
+        Ok(PublicKey {
+            key_polynomials,
+            params,
+        })
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for GlobalPublicKey {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use fhe_traits::Serialize as FheSerialize;
+        use serde::ser::SerializeStruct;
+
+        // Convert Array2 to Vec<Vec<u8>> for serialization
+        let matrix_bytes: Vec<Vec<Vec<u8>>> = self
+            .matrix
+            .outer_iter()
+            .map(|row| row.iter().map(|p| p.to_bytes()).collect())
+            .collect();
+
+        let mut state = serializer.serialize_struct("GlobalPublicKey", 4)?;
+        state.serialize_field("matrix", &matrix_bytes)?;
+        state.serialize_field("crs", &self.crs)?;
+        state.serialize_field("num_keys", &self.num_keys)?;
+        state.serialize_field("params", &*self.params)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for GlobalPublicKey {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use fhe_traits::DeserializeWithContext;
+
+        #[derive(serde::Deserialize)]
+        struct DeserializedGlobalPublicKey {
+            matrix: Vec<Vec<Vec<u8>>>,
+            crs: PvwCrs,
+            num_keys: usize,
+            params: PvwParameters,
+        }
+
+        let data = DeserializedGlobalPublicKey::deserialize(deserializer)?;
+        let params = Arc::new(data.params);
+        let crs = data.crs;
+
+        // Deserialize matrix
+        let matrix_polys: std::result::Result<Vec<Vec<Poly>>, _> = data
+            .matrix
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|bytes| Poly::from_bytes(&bytes, &params.context))
+                    .collect()
+            })
+            .collect();
+
+        let matrix_polys = matrix_polys.map_err(serde::de::Error::custom)?;
+
+        // Convert back to Array2
+        let rows = matrix_polys.len();
+        let cols = if rows > 0 { matrix_polys[0].len() } else { 0 };
+
+        let mut flat_data = Vec::new();
+        for row in matrix_polys {
+            flat_data.extend(row);
+        }
+
+        let matrix =
+            Array2::from_shape_vec((rows, cols), flat_data).map_err(serde::de::Error::custom)?;
+
+        Ok(GlobalPublicKey {
+            matrix,
+            crs,
+            num_keys: data.num_keys,
+            params,
+        })
+    }
+}
