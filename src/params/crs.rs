@@ -1,7 +1,6 @@
 use super::parameters::{PvwParameters, Result};
 use crate::errors::PvwError;
 use fhe_math::rq::{Poly, Representation};
-use fhe_traits::Serialize;
 use ndarray::Array2;
 use rand::{CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -226,25 +225,71 @@ impl PvwCrs {
     }
 }
 
-impl Serialize for PvwCrs {
-    /// Serialize the CRS to bytes
-    ///
-    /// Serializes the entire k×k matrix of polynomials in row-major order.
-    /// The format includes dimension information for validation during deserialization.
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
+#[cfg(feature = "serde")]
+impl serde::Serialize for PvwCrs {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use fhe_traits::Serialize as FheSerialize;
+        use serde::ser::SerializeStruct;
 
-        // Serialize matrix dimensions first for validation during deserialization
-        bytes.extend_from_slice(&(self.params.k as u32).to_le_bytes());
+        // Convert Array2 to Vec<Vec<u8>> for serialization
+        let matrix_bytes: Vec<Vec<Vec<u8>>> = self
+            .matrix
+            .outer_iter()
+            .map(|row| row.iter().map(|p| p.to_bytes()).collect())
+            .collect();
 
-        // Serialize each polynomial in row-major order
-        for poly in self.matrix.iter() {
-            let poly_bytes = poly.to_bytes();
-            // Store length prefix for each polynomial
-            bytes.extend_from_slice(&(poly_bytes.len() as u32).to_le_bytes());
-            bytes.extend_from_slice(&poly_bytes);
+        let mut state = serializer.serialize_struct("PvwCrs", 2)?;
+        state.serialize_field("matrix", &matrix_bytes)?;
+        state.serialize_field("params", &*self.params)?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PvwCrs {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use fhe_traits::DeserializeWithContext;
+
+        #[derive(serde::Deserialize)]
+        struct DeserializedCrs {
+            matrix: Vec<Vec<Vec<u8>>>,
+            params: PvwParameters,
         }
 
-        bytes
+        let data = DeserializedCrs::deserialize(deserializer)?;
+        let params = Arc::new(data.params);
+
+        // Deserialize matrix
+        let matrix_polys: std::result::Result<Vec<Vec<Poly>>, _> = data
+            .matrix
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|bytes| Poly::from_bytes(&bytes, &params.context))
+                    .collect()
+            })
+            .collect();
+
+        let matrix_polys = matrix_polys.map_err(serde::de::Error::custom)?;
+
+        // Convert back to Array2
+        let rows = matrix_polys.len();
+        let cols = if rows > 0 { matrix_polys[0].len() } else { 0 };
+
+        let mut flat_data = Vec::new();
+        for row in matrix_polys {
+            flat_data.extend(row);
+        }
+
+        let matrix =
+            Array2::from_shape_vec((rows, cols), flat_data).map_err(serde::de::Error::custom)?;
+
+        Ok(PvwCrs { matrix, params })
     }
 }

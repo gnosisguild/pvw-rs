@@ -29,15 +29,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ring_degree = 8; // Must be a power of two
     let dimension = 32;
 
-    let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
-    //let moduli = vec![0xffffc4001u64, 0x1ffffe0001u64];
+    //let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
+    let moduli = vec![0xffffc4001u64, 0x1ffffe0001u64];
     //let moduli = vec![0x1ffffffe88001, 0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
 
     // Get parameters that satisfy correctness condition
     let (suggested_variance, suggested_bound1, suggested_bound2) =
         PvwParameters::suggest_correct_parameters(num_parties, dimension, ring_degree, &moduli)
             .unwrap_or((1, 50, 100));
-
+    println!(
+        "Suggested variance: {suggested_variance}, Suggested bound1: {suggested_bound1}, Suggested bound2: {suggested_bound2}"
+    );
     // Build PVW parameters
     let params = PvwParametersBuilder::new()
         .set_parties(num_parties)
@@ -48,6 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .set_error_bounds_u32(suggested_bound1, suggested_bound2)
         .build_arc()?;
 
+    println!("{params:?}");
     // Display parameters
     println!("⚙️  {}", style("PVW Parameters:").blue().bold());
     println!(
@@ -85,6 +88,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         parties.push(party);
     }
 
+    println!("{parties:?}");
     // Each party creates their vector of values to distribute
     let mut all_party_vectors = Vec::new();
     for party_id in 0..num_parties {

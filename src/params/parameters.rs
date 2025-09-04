@@ -593,3 +593,63 @@ impl PvwParameters {
         ))
     }
 }
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for PvwParameters {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("PvwParameters", 7)?;
+        state.serialize_field("n", &self.n)?;
+        state.serialize_field("k", &self.k)?;
+        state.serialize_field("l", &self.l)?;
+        state.serialize_field("moduli", &self.moduli().to_vec())?;
+        state.serialize_field("secret_variance", &self.secret_variance)?;
+        state.serialize_field("error_bound_1", &self.error_bound_1.to_string())?;
+        state.serialize_field("error_bound_2", &self.error_bound_2.to_string())?;
+        state.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PvwParameters {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct DeserializedParams {
+            n: usize,
+            k: usize,
+            l: usize,
+            moduli: Vec<u64>,
+            secret_variance: u32,
+            error_bound_1: String,
+            error_bound_2: String,
+        }
+
+        let params = DeserializedParams::deserialize(deserializer)?;
+
+        use num_bigint::BigInt;
+        use std::str::FromStr;
+
+        let error_bound_1 =
+            BigInt::from_str(&params.error_bound_1).map_err(serde::de::Error::custom)?;
+        let error_bound_2 =
+            BigInt::from_str(&params.error_bound_2).map_err(serde::de::Error::custom)?;
+
+        let inner = PvwParameters::builder()
+            .set_parties(params.n)
+            .set_dimension(params.k)
+            .set_l(params.l)
+            .set_moduli(&params.moduli)
+            .set_secret_variance(params.secret_variance)
+            .set_error_bounds(error_bound_1, error_bound_2)
+            .build()
+            .map_err(serde::de::Error::custom)?;
+
+        Ok(inner)
+    }
+}

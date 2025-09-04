@@ -4,8 +4,12 @@
 //! that covers all error cases across the library.
 use thiserror::Error;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize as SerdeSerialize};
+
 /// PVW library error types
 #[derive(Error, Debug)]
+#[cfg_attr(feature = "serde", derive(SerdeSerialize, Deserialize))]
 pub enum PvwError {
     #[error("Invalid parameters: {0}")]
     InvalidParameters(String),
