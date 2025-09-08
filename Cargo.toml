@@ -13,7 +13,7 @@ categories = ["mathematics", "cryptography", "science"]
 rust-version = "1.86.0"
 
 [dependencies]
-num-bigint = { version = "0.4.6", features = ["serde"] }
+num-bigint = { version = "0.4.6", features = ["rand"] }
 num-traits = "0.2"
 rand = "0.8.5"
 thiserror = "1.0"

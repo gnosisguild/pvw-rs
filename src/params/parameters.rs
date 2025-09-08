@@ -3,7 +3,7 @@
 //! This module manages the various parameters required for the PVW scheme
 //! and the Common Reference String used in cryptographic protocols.
 use crate::errors::{PvwError, PvwResult};
-use crate::sampling::normal::sample_discrete_gaussian_vec;
+use crate::sampling::uniform::sample_uniform_coefficients;
 use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Context, Poly, Representation};
 use fhe_util::sample_vec_cbd;
@@ -261,9 +261,9 @@ impl PvwParameters {
         Ok(poly)
     }
 
-    /// Sample error polynomial (level 1) using discrete Gaussian sampling
+    /// Sample error polynomial (level 1) using discrete uniform sampling
     pub fn sample_error_1<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Result<Poly> {
-        let coeffs_bigint = sample_discrete_gaussian_vec(&self.error_bound_1, self.l);
+        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_1, self.l);
         let mut poly = self.bigints_to_poly(&coeffs_bigint)?;
 
         if self.l >= 8 {
@@ -273,9 +273,9 @@ impl PvwParameters {
         Ok(poly)
     }
 
-    /// Sample error polynomial (level 2) using discrete Gaussian sampling
+    /// Sample error polynomial (level 2) using discrete uniform sampling
     pub fn sample_error_2<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Result<Poly> {
-        let coeffs_bigint = sample_discrete_gaussian_vec(&self.error_bound_2, self.l);
+        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_2, self.l);
         let mut poly = self.bigints_to_poly(&coeffs_bigint)?;
 
         if self.l >= 8 {
