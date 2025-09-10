@@ -1,338 +1,271 @@
-//! Implementation of PVW parameter and CRS generation using the updated `pvw-rs` crate.
-
-use std::{env, error::Error, process::exit};
+//! Multi-Party Vector Encryption Example
+//!
+//! Demonstrates PVW encryption system where:
+//! 1. Multiple parties each encrypt their own vector of values
+//! 2. Each party can decrypt only the values intended for them
+//! 3. Privacy is preserved: parties only see their designated shares
 
 use console::style;
-use pvw::{GlobalPublicKey, Party, PvwCrs, PvwParametersBuilder};
+use pvw::{
+    crypto::{decrypt_party_shares, encrypt_all_party_shares},
+    keys::{GlobalPublicKey, Party},
+    params::{PvwCrs, PvwParameters, PvwParametersBuilder},
+};
 use rand::rngs::OsRng;
-
-fn print_notice_and_exit(error: Option<String>) {
-    println!(
-        "{} PVW Parameter and CRS Generation",
-        style("  overview:").magenta().bold()
-    );
-    println!(
-        "{} pvw [-h] [--help] [--num_parties=<value>] [--threshold=<value>] [--dimension=<value>] [--redundancy=<value>]",
-        style("     usage:").magenta().bold()
-    );
-    println!(
-        "{} {} {} {} and {} must be at least 1, {} must be < n/2, {} must be power of 2",
-        style("constraints:").magenta().bold(),
-        style("num_parties").blue(),
-        style("threshold").blue(),
-        style("dimension").blue(),
-        style("redundancy").blue(),
-        style("threshold").blue(),
-        style("redundancy").blue(),
-    );
-    if let Some(error) = error {
-        println!("{} {}", style("     error:").red().bold(), error);
-    }
-    exit(0);
-}
+use rayon::prelude::*;
+use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // This executable is a command line tool which enables to specify
-    // PVW parameters for multi-receiver LWE encryption.
-    let args: Vec<String> = env::args().skip(1).collect();
+    println!(
+        "{}",
+        style("=== Multi-Party Vector Encryption Demo ===")
+            .cyan()
+            .bold()
+    );
+    println!();
 
-    // Print the help if requested.
-    if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
-        print_notice_and_exit(None)
-    }
+    // Configuration
+    let num_parties = 7;
+    let ring_degree = 8; // Must be a power of two
+    let dimension = 32;
 
-    // Default parameters
-    let mut num_parties = 10;
-    let mut threshold = 4;
-    let mut dimension = 8; // Increased security parameter k
-    let mut redundancy = 8; // Minimal power of 2 for NTT
+    //let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
+    let moduli = vec![0xffffc4001u64, 0x1ffffe0001u64];
+    //let moduli = vec![0x1ffffffe88001, 0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
 
-    // Update the parameters depending on the arguments provided.
-    for arg in &args {
-        if arg.starts_with("--num_parties") {
-            let a: Vec<&str> = arg.rsplit('=').collect();
-            if a.len() != 2 || a[0].parse::<usize>().is_err() {
-                print_notice_and_exit(Some("Invalid `--num_parties` argument".to_string()))
-            } else {
-                num_parties = a[0].parse::<usize>()?
-            }
-        } else if arg.starts_with("--threshold") {
-            let a: Vec<&str> = arg.rsplit('=').collect();
-            if a.len() != 2 || a[0].parse::<usize>().is_err() {
-                print_notice_and_exit(Some("Invalid `--threshold` argument".to_string()))
-            } else {
-                threshold = a[0].parse::<usize>()?
-            }
-        } else if arg.starts_with("--dimension") {
-            let parts: Vec<&str> = arg.rsplit('=').collect();
-            if parts.len() != 2 || parts[0].parse::<usize>().is_err() {
-                print_notice_and_exit(Some("Invalid `--dimension` argument".to_string()))
-            } else {
-                dimension = parts[0].parse::<usize>()?
-            }
-        } else if arg.starts_with("--redundancy") {
-            let parts: Vec<&str> = arg.rsplit('=').collect();
-            if parts.len() != 2 || parts[0].parse::<usize>().is_err() {
-                print_notice_and_exit(Some("Invalid `--redundancy` argument".to_string()))
-            } else {
-                redundancy = parts[0].parse::<usize>()?
-            }
-        } else {
-            print_notice_and_exit(Some(format!("Unrecognized argument: {arg}")))
-        }
-    }
-
-    // Validate parameters
-    if num_parties == 0 || threshold == 0 || dimension == 0 || redundancy == 0 {
-        print_notice_and_exit(Some("All parameters must be nonzero".to_string()))
-    }
-    if threshold >= (num_parties + 1) / 2 {
-        print_notice_and_exit(Some(
-            "Threshold must be strictly less than half the number of parties".to_string(),
-        ))
-    }
-    if (redundancy & (redundancy - 1)) != 0 {
-        print_notice_and_exit(Some(
-            "Redundancy parameter must be a power of 2".to_string(),
-        ))
-    }
-
-    // Display PVW setup information
-    println!("# PVW Parameter and CRS Generation");
-    println!("\tnum_parties (n) = {num_parties}");
-    println!("\tthreshold (t) = {threshold}");
-    println!("\tdimension (k) = {dimension}");
-    println!("\tredundancy (l) = {redundancy}");
-
-    // Standard NTT-friendly moduli for fhe.rs compatibility
-    let moduli = vec![
-        0x1FFFFFFEA0001u64, // 562949951979521
-        0x1FFFFFFE88001u64, // 562949951881217
-        0x1FFFFFFE48001u64, // 562949951619073
-    ];
-
-    // Build PVW parameters using the new builder pattern
+    // Get parameters that satisfy correctness condition
+    let (suggested_variance, suggested_bound1, suggested_bound2) =
+        PvwParameters::suggest_correct_parameters(num_parties, dimension, ring_degree, &moduli)
+            .unwrap_or((1, 50, 100));
+    println!(
+        "Suggested variance: {suggested_variance}, Suggested bound1: {suggested_bound1}, Suggested bound2: {suggested_bound2}"
+    );
+    // Build PVW parameters
     let params = PvwParametersBuilder::new()
         .set_parties(num_parties)
         .set_dimension(dimension)
-        .set_l(redundancy)
+        .set_l(ring_degree)
         .set_moduli(&moduli)
-        .set_secret_variance(1) // CBD variance for secret keys
+        .set_secret_variance(suggested_variance)
+        .set_error_bounds_u32(suggested_bound1, suggested_bound2)
         .build_arc()?;
 
-    // Display computed threshold (automatically set to < n/2)
-    println!("\tcomputed_threshold (t) = {}", params.t);
-    println!("\tsecret_variance = {}", params.secret_variance);
-
-    // Display moduli information
-    let q_total = params.q_total();
+    println!("{params:?}");
+    // Display parameters
+    println!("⚙️  {}", style("PVW Parameters:").blue().bold());
     println!(
-        "\ttotal_modulus (Q) = {} (~{} bits)",
-        q_total,
-        q_total.bits()
-    );
-    println!("\tmoduli_count = {}", params.moduli().len());
-    for (i, &modulus) in params.moduli().iter().enumerate() {
-        println!(
-            "\t\tq[{}] = {} (~{} bits)",
-            i,
-            modulus,
-            64 - modulus.leading_zeros()
-        );
-    }
-
-    // Display error bounds
-    println!(
-        "\terror_bound_1 = {} (~{} bits)",
-        params.error_bound_1,
-        params.error_bound_1.bits()
+        "  • Parties: {}, Dimension: {}, Ring degree: {}",
+        params.n, params.k, params.l
     );
     println!(
-        "\terror_bound_2 = {} (~{} bits)",
-        params.error_bound_2,
-        params.error_bound_2.bits()
+        "  • Delta (Δ): {}, Modulus bits: {}",
+        params.delta(),
+        params.q_total().bits()
     );
-
-    println!("\n# Parameter Analysis");
-
-    // Compute and display the gadget vector delta
-    let delta = params.delta();
-    println!("\tgadget_delta (Δ) = {} (~{} bits)", delta, delta.bits());
-
-    // Generate and display the gadget vector
-    let gadget_vector = params.gadget_vector()?;
-    println!("\tgadget_vector (g) length = {}", gadget_vector.len());
-    println!("\tgadget_vector elements (first 5):");
-    for (i, element) in gadget_vector.iter().take(5).enumerate() {
-        println!("\t\tg[{}] = {} (~{} bits)", i, element, element.bits());
-    }
-    if gadget_vector.len() > 5 {
-        println!("\t\t... and {} more elements", gadget_vector.len() - 5);
-    }
-
-    // Generate the Common Reference String (CRS)
-    println!("\n# CRS Generation");
-    let mut rng = OsRng;
-    let crs = PvwCrs::new(&params, &mut rng)?;
-
     println!(
-        "\tCRS validation: {}",
-        if crs.validate().is_ok() {
-            "✓ PASSED"
+        "  • Error bounds: ({suggested_bound1}, {suggested_bound2}), Secret variance: {suggested_variance}"
+    );
+    println!(
+        "  • Correctness condition: {}",
+        if params.verify_correctness_condition() {
+            "✓ Satisfied"
         } else {
-            "✗ FAILED"
+            "✗ Not satisfied"
         }
     );
-    println!(
-        "\tCRS matrix A ∈ R_q^({}×{})",
-        crs.dimensions().0,
-        crs.dimensions().1
-    );
-    println!("\tCRS polynomial degree: {}", params.l);
-    println!("\tCRS representation: NTT (optimized for multiplication)");
+    println!();
 
-    // Sample CRS elements (coefficient form for display)
-    println!("\tSample CRS polynomial coefficients:");
-    for i in 0..std::cmp::min(2, dimension) {
-        for j in 0..std::cmp::min(2, dimension) {
-            if let Some(poly) = crs.get(i, j) {
-                // Convert a copy to coefficient form for display
-                let mut display_poly = poly.clone();
-                display_poly.change_representation(fhe_math::rq::Representation::PowerBasis);
-                let coeffs = display_poly.coefficients();
+    let mut rng = OsRng;
 
-                println!("\t\tA[{},{}] coefficients (first 5):", i, j);
-                if coeffs.nrows() > 0 {
-                    let first_row = coeffs.row(0);
-                    for (k, &coeff) in first_row.iter().take(5).enumerate() {
-                        println!("\t\t\t[{}] = {}", k, coeff);
-                    }
-                    if first_row.len() > 5 {
-                        println!("\t\t\t... and {} more coefficients", first_row.len() - 5);
-                    }
-                }
-            }
-        }
-    }
+    // Generate parties and global public key
+    let crs = PvwCrs::new(&params, &mut rng)?;
+    let mut global_pk = GlobalPublicKey::new(crs);
 
-    // Demonstrate key generation workflow
-    println!(
-        "\n# Key Generation Demo (k={}, l={})",
-        dimension, redundancy
-    );
-
-    // Generate some parties
-    let num_demo_parties = std::cmp::min(3, num_parties);
     let mut parties = Vec::new();
-    println!("\tGenerating {} demo parties:", num_demo_parties);
-
-    for i in 0..num_demo_parties {
+    for i in 0..num_parties {
         let party = Party::new(i, &params, &mut rng)?;
-        println!("\t\tParty {}: secret key generated (CBD coefficients)", i);
-
-        // Show sample secret key coefficients
-        let sk_coeffs = party.secret_key().coefficients();
-        if !sk_coeffs.is_empty() && !sk_coeffs[0].is_empty() {
-            println!(
-                "\t\t\tSample coefficients: {:?}",
-                &sk_coeffs[0][..std::cmp::min(5, sk_coeffs[0].len())]
-            );
-        }
-
+        global_pk.generate_and_add_party(&party, &mut rng)?;
         parties.push(party);
     }
 
-    // Generate global public key
-    println!("\tGenerating global public key...");
-    let mut global_pk = GlobalPublicKey::new(crs);
-    global_pk.generate_all_party_keys(&parties, &mut rng)?;
+    println!("{parties:?}");
+    // Each party creates their vector of values to distribute
+    let mut all_party_vectors = Vec::new();
+    for party_id in 0..num_parties {
+        let party_vector: Vec<u64> = (1..=num_parties)
+            .map(|j| (party_id * 1000 + j) as u64)
+            .collect();
+        all_party_vectors.push(party_vector);
+    }
 
+    // Display the values being encrypted
     println!(
-        "\t✓ Global public key generated for {} parties",
-        global_pk.num_public_keys()
+        "📊 {}",
+        style("Share Distribution Matrix (what each dealer encrypts):")
+            .blue()
+            .bold()
     );
-    println!(
-        "\t✓ Public key validation: {}",
-        if global_pk.validate().is_ok() {
-            "PASSED"
-        } else {
-            "FAILED"
+    println!("    Rows = Dealers, Columns = Values for each recipient");
+    println!();
+    print!("Dealer ");
+    for i in 0..num_parties {
+        print!("{:>8}", format!("→P{i}"));
+    }
+    println!();
+    println!("{}", "-".repeat(7 + num_parties * 8));
+
+    for (dealer_id, vector) in all_party_vectors.iter().enumerate() {
+        print!("{dealer_id:>6} ");
+        for &value in vector {
+            print!("{value:>8}");
         }
-    );
+        println!();
+    }
+    println!();
 
-    // Display size estimates
-    println!("\n# Size Analysis (k={}, l={})", dimension, redundancy);
-    let poly_size_bits = params.l * 64; // Rough estimate: l coefficients × 64 bits each
-    let crs_size_kb = (dimension * dimension * poly_size_bits) as f64 / (8.0 * 1024.0);
-    let sk_size_kb = (dimension * poly_size_bits) as f64 / (8.0 * 1024.0);
-    let pk_size_kb = (dimension * poly_size_bits) as f64 / (8.0 * 1024.0);
+    // Encrypt all party vectors (creates n ciphertexts, one per dealer)
+    let start_time = std::time::Instant::now();
+    let all_ciphertexts = encrypt_all_party_shares(&all_party_vectors, &global_pk)?;
+    let encryption_time = start_time.elapsed();
 
-    println!("\tEstimated sizes (coefficient form):");
-    println!(
-        "\t\tCRS matrix: ~{:.1} KB ({} polynomials of degree {})",
-        crs_size_kb,
-        dimension * dimension,
-        redundancy
-    );
-    println!(
-        "\t\tSecret key: ~{:.1} KB ({} polynomials of degree {})",
-        sk_size_kb, dimension, redundancy
-    );
-    println!(
-        "\t\tPublic key: ~{:.1} KB ({} polynomials of degree {})",
-        pk_size_kb, dimension, redundancy
-    );
-    println!(
-        "\t\tGlobal public key: ~{:.1} KB ({} party keys)",
-        pk_size_kb * num_parties as f64,
-        num_parties
-    );
+    // Decrypt shares using the new efficient function
+    let start_decrypt = std::time::Instant::now();
 
-    // Display computational benefits
-    println!("\n# Performance Features");
-    println!("\t✓ NTT-optimized polynomial multiplication: O(l log l)");
-    println!(
-        "\t✓ RNS arithmetic for large moduli: {} components",
-        params.moduli().len()
-    );
-    println!("\t✓ Coefficient-based storage: zero-cost coefficient access");
-    println!("\t✓ On-demand polynomial conversion: convert only when needed");
-    println!("\t✓ fhe.rs integration: production-grade lattice cryptography");
+    // Decrypt all party shares in parallel
+    let decryption_results: Result<Vec<Vec<u64>>, pvw::params::PvwError> = parties
+        .par_iter()
+        .enumerate()
+        .take(num_parties)
+        .map(|(recipient_party_index, recipient_party)| {
+            // Use the new function to decrypt all shares intended for this party
+            decrypt_party_shares(
+                &all_ciphertexts,
+                &recipient_party.secret_key,
+                recipient_party_index,
+            )
+        })
+        .collect();
 
-    // Display summary
-    println!("\n# Setup Complete");
-    println!(
-        "✓ PVW parameters generated successfully (k={}, l={})",
-        dimension, redundancy
-    );
-    println!(
-        "✓ Gadget vector computed (Δ = {}, {} elements)",
-        delta,
-        gadget_vector.len()
-    );
-    println!(
-        "✓ CRS matrix A generated ({}×{} polynomials in NTT form)",
-        dimension, dimension
-    );
-    println!(
-        "✓ Demo key generation completed ({} parties)",
-        num_demo_parties
-    );
-    println!("✓ All validations passed");
+    let decryption_results = decryption_results?;
+    let decryption_time = start_decrypt.elapsed();
 
-    println!("\n🚀 Ready for PVW multi-receiver encryption protocol!");
+    // Count correct decryptions
+    let mut total_correct = 0;
+    let mut total_values = 0;
+    for (recipient_party_index, party_shares) in decryption_results.iter().enumerate() {
+        for (dealer_idx, &decrypted_value) in party_shares.iter().enumerate() {
+            let expected_value = all_party_vectors[dealer_idx][recipient_party_index];
+            if decrypted_value == expected_value {
+                total_correct += 1;
+            }
+            total_values += 1;
+        }
+    }
+
+    // Display received shares matrix
     println!(
-        "   • Security parameter k = {} (increased security)",
-        dimension
+        "📊 {}",
+        style("Received Shares Matrix (what each party decrypted):")
+            .blue()
+            .bold()
+    );
+    println!("    Rows = Recipients, Columns = Shares from each dealer");
+    println!();
+    print!("Recip ");
+    for i in 0..num_parties {
+        print!("{:>8}", format!("←D{i}"));
+    }
+    println!();
+    println!("{}", "-".repeat(6 + num_parties * 8));
+
+    for (recipient_id, shares) in decryption_results.iter().enumerate() {
+        print!("{recipient_id:>5} ");
+        for &share in shares {
+            print!("{share:>8}");
+        }
+        println!();
+    }
+    println!();
+
+    // Verify the shares match the original distribution
+    println!("🔍 {}", style("Verification:").blue().bold());
+    let mut verification_details = Vec::new();
+    for (recipient_party_index, _recipient_party) in
+        all_party_vectors.iter().enumerate().take(num_parties)
+    {
+        for (dealer_party_index, _dealer_party) in
+            all_party_vectors.iter().enumerate().take(num_parties)
+        {
+            let expected = all_party_vectors[dealer_party_index][recipient_party_index];
+            let received = decryption_results[recipient_party_index][dealer_party_index];
+            let matches = expected == received;
+            verification_details.push((
+                dealer_party_index,
+                recipient_party_index,
+                expected,
+                received,
+                matches,
+            ));
+        }
+    }
+
+    // Show any mismatches
+    let mismatches: Vec<_> = verification_details
+        .iter()
+        .filter(|(_, _, _, _, matches)| !matches)
+        .collect();
+
+    if !mismatches.is_empty() {
+        println!("  Mismatches found:");
+        for (dealer, recipient, expected, received, _) in mismatches {
+            println!("    D{dealer} → P{recipient}: expected {expected}, got {received}");
+        }
+    } else {
+        println!("  ✓ All shares correctly transmitted and decrypted!");
+    }
+
+    // Results summary
+    let success_rate = (total_correct as f64 / total_values as f64) * 100.0;
+    println!("📈 {}", style("Results Summary:").blue().bold());
+    println!("  • Success rate: {total_correct}/{total_values} ({success_rate:.1}%)");
+    println!("  • Operations: {num_parties} encrypt calls, {num_parties} decrypt calls");
+    println!();
+
+    // Performance metrics
+    println!("⚡ {}", style("Performance:").blue().bold());
+    println!(
+        "  • Encryption time: {encryption_time:?} ({:?} avg per dealer)",
+        encryption_time / num_parties as u32
     );
     println!(
-        "   • Polynomial degree l = {} (minimal for efficiency)",
-        redundancy
+        "  • Decryption time: {decryption_time:?} ({:?} avg per party)",
+        decryption_time / num_parties as u32
     );
-    println!("   • Parties can encrypt to any subset");
-    println!("   • Threshold decryption with t={} parties", params.t);
-    println!("   • Efficient polynomial operations via NTT");
-    println!("   • Secure coefficient storage with zeroization");
+    println!(
+        "  • Efficiency: {total_values} individual decrypt operations in {num_parties} function calls"
+    );
+    println!();
+
+    // Final status
+    if success_rate == 100.0 {
+        println!(
+            "🎉 {}",
+            style("SUCCESS: PVSS working perfectly!").green().bold()
+        );
+        println!("    Each party received exactly the shares intended for them.");
+    } else if success_rate >= 80.0 {
+        println!(
+            "✅ {}",
+            style("MOSTLY SUCCESSFUL: Minor decryption issues detected")
+                .yellow()
+                .bold()
+        );
+    } else {
+        println!(
+            "⚠️  {}",
+            style("NEEDS ATTENTION: Low success rate").red().bold()
+        );
+    }
 
     Ok(())
 }
