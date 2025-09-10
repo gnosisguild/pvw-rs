@@ -4,8 +4,10 @@
 //! commonly used in lattice-based cryptography.
 
 pub mod normal;
+pub mod uniform;
 
 pub use normal::*;
+pub use uniform::*;
 
 /// Re-export sampling-related types and functions
 pub mod prelude {
