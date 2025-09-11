@@ -28,7 +28,7 @@ mod tests {
             .set_dimension(4)
             .set_l(8)
             .set_moduli(&test_moduli())
-            .set_secret_variance(1)
+            .set_secret_variance(0.5) // Updated to f32
             .set_error_bounds_u32(100, 200)
             .build_arc()
             .unwrap()
@@ -37,9 +37,10 @@ mod tests {
     /// Create PVW parameters that satisfy the correctness condition
     fn create_correct_test_params() -> Arc<PvwParameters> {
         let moduli = test_moduli();
+        let variance = 0.5f32; // Use f32 variance
 
-        let (variance, bound1, bound2) =
-            PvwParameters::suggest_correct_parameters(30, 64, 32, &moduli).unwrap_or((1, 50, 100));
+        let (bound1, bound2) =
+            PvwParameters::suggest_error_bounds(30, 64, 32, &moduli, variance).unwrap_or((50, 100));
 
         PvwParametersBuilder::new()
             .set_parties(30)
@@ -260,7 +261,7 @@ mod tests {
                 .set_dimension(k)
                 .set_l(l)
                 .set_moduli(&test_moduli())
-                .set_secret_variance(1)
+                .set_secret_variance(0.5) // Updated to f32
                 .set_error_bounds_u32(50, 100)
                 .build_arc()
                 .unwrap();
@@ -275,10 +276,11 @@ mod tests {
     #[test]
     fn test_correctness_condition_integration() {
         let moduli = test_moduli();
+        let variance = 0.5f32;
 
         // Test with parameters that satisfy correctness condition
-        if let Ok((variance, bound1, bound2)) =
-            PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli)
+        if let Ok((bound1, bound2)) =
+            PvwParameters::suggest_error_bounds(3, 4, 8, &moduli, variance)
         {
             let good_params = PvwParametersBuilder::new()
                 .set_parties(3)
@@ -302,7 +304,7 @@ mod tests {
             .set_dimension(8)
             .set_l(8)
             .set_moduli(&moduli)
-            .set_secret_variance(3)
+            .set_secret_variance(3.0) // Higher variance
             .set_error_bounds_u32(1000, 2000)
             .build_arc()
             .unwrap();
@@ -315,21 +317,21 @@ mod tests {
     fn test_pvw_parameters_with_custom_moduli() {
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
 
-        // Try different parameter combinations
+        // Try different parameter combinations with different variances
         let test_cases = [
-            (3, 8, 8),      // Small parameters
-            (10, 128, 16),  // Medium parameters
-            (50, 2048, 32), // Larger parameters
+            (3, 8, 8, 0.5f32),      // Small parameters, ternary secrets
+            (10, 128, 16, 1.0f32),  // Medium parameters, wider range
+            (50, 2048, 32, 0.5f32), // Larger parameters, ternary secrets
         ];
 
-        for (n, k, l) in test_cases {
-            println!("\n=== Testing parameters: n={n}, k={k}, l={l} ===");
+        for (n, k, l, variance) in test_cases {
+            println!("\n=== Testing parameters: n={n}, k={k}, l={l}, variance={variance} ===");
 
             // Get suggested correct parameters
-            match PvwParameters::suggest_correct_parameters(n, k, l, &moduli) {
-                Ok((secret_variance, error_bound_1, error_bound_2)) => {
+            match PvwParameters::suggest_error_bounds(n, k, l, &moduli, variance) {
+                Ok((error_bound_1, error_bound_2)) => {
                     println!(
-                        "Suggested parameters found: variance={secret_variance}, bound1={error_bound_1}, bound2={error_bound_2}"
+                        "Suggested error bounds found: bound1={error_bound_1}, bound2={error_bound_2}"
                     );
 
                     // Create parameters with suggested bounds
@@ -338,7 +340,7 @@ mod tests {
                         k,
                         l,
                         &moduli,
-                        secret_variance,
+                        variance,
                         error_bound_1,
                         error_bound_2,
                     ) {
@@ -358,7 +360,52 @@ mod tests {
                         Err(e) => println!("✗ Failed to create parameters: {e}"),
                     }
                 }
-                Err(e) => println!("✗ Could not find suitable parameters: {e}"),
+                Err(e) => println!("✗ Could not find suitable error bounds: {e}"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_variance_types() {
+        let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
+
+        // Test different variance values
+        let variances = [0.5f32, 1.0f32, 2.0f32];
+
+        for variance in variances {
+            println!("\nTesting variance: {variance}");
+
+            if let Ok((bound1, bound2)) =
+                PvwParameters::suggest_error_bounds(5, 32, 8, &moduli, variance)
+            {
+                let params =
+                    PvwParameters::new_with_u32_bounds(5, 32, 8, &moduli, variance, bound1, bound2)
+                        .unwrap();
+
+                println!("  Created parameters with variance {variance}");
+                println!("  Error bounds: ({bound1}, {bound2})");
+                println!(
+                    "  Correctness satisfied: {}",
+                    params.verify_correctness_condition()
+                );
+
+                // Test secret key generation to verify the variance is working
+                let mut rng = thread_rng();
+                let sk = SecretKey::random(&Arc::new(params), &mut rng).unwrap();
+                println!("  Secret key generated successfully");
+
+                // Check a few coefficients to see the range (for debugging)
+                if let Ok(coeffs) = sk.get_polynomial(0) {
+                    let mut temp_poly = coeffs.clone();
+                    temp_poly.change_representation(Representation::PowerBasis);
+                    let coeff_vec: Vec<num_bigint::BigUint> = (&temp_poly).into();
+                    println!(
+                        "  First few secret coefficients: {:?}",
+                        &coeff_vec[0..4.min(coeff_vec.len())]
+                    );
+                }
+            } else {
+                println!("  Could not find suitable error bounds for variance {variance}");
             }
         }
     }
@@ -373,7 +420,7 @@ mod tests {
             .set_dimension(128)
             .set_l(16)
             .set_moduli(&moduli)
-            .set_secret_variance(2)
+            .set_secret_variance(1.0) // Updated to f32
             .set_error_bounds_u32(500, 1000)
             .build();
 
@@ -395,7 +442,7 @@ mod tests {
             64,      // k (LWE dimension)
             8,       // l (redundancy parameter)
             &moduli, // specified moduli
-            1,       // secret_variance
+            0.5,     // secret_variance (f32)
             200,     // error_bound_1
             400,     // error_bound_2
         );
@@ -412,9 +459,10 @@ mod tests {
             Err(e) => println!("Method 2 failed: {e}"),
         }
 
-        // Method 3: Get suggested correct parameters first
-        if let Ok((variance, bound1, bound2)) =
-            PvwParameters::suggest_correct_parameters(5, 128, 16, &moduli)
+        // Method 3: Get suggested error bounds first
+        let variance = 0.5f32;
+        if let Ok((bound1, bound2)) =
+            PvwParameters::suggest_error_bounds(5, 128, 16, &moduli, variance)
         {
             let params3 =
                 PvwParameters::new_with_u32_bounds(5, 128, 16, &moduli, variance, bound1, bound2);
@@ -437,7 +485,7 @@ mod tests {
     fn test_bigints_to_poly_basic() {
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
 
-        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 1, 100, 200)
+        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 0.5, 100, 200)
             .expect("Failed to create parameters");
 
         // Test case 1: Zero polynomial
@@ -503,7 +551,7 @@ mod tests {
     fn test_bigints_to_poly_negative_values() {
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
 
-        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 1, 100, 200)
+        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 0.5, 100, 200)
             .expect("Failed to create parameters");
 
         // Test negative values
@@ -540,7 +588,7 @@ mod tests {
     fn test_bigints_to_poly_round_trip() {
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
 
-        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 1, 100, 200)
+        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 0.5, 100, 200)
             .expect("Failed to create parameters");
 
         // Test round-trip: BigInt → Poly → BigUint → BigInt
@@ -590,7 +638,7 @@ mod tests {
     fn test_bigints_to_poly_gadget_polynomial() {
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
 
-        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 1, 100, 200)
+        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 0.5, 100, 200)
             .expect("Failed to create parameters");
 
         // Test the gadget polynomial specifically
@@ -629,7 +677,7 @@ mod tests {
     fn test_bigints_to_poly_error_cases() {
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
 
-        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 1, 100, 200)
+        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 0.5, 100, 200)
             .expect("Failed to create parameters");
 
         // Test wrong number of coefficients
@@ -652,7 +700,7 @@ mod tests {
     fn test_bigints_to_poly_performance() {
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
 
-        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 1, 100, 200)
+        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 0.5, 100, 200)
             .expect("Failed to create parameters");
 
         // Create test coefficients
@@ -685,7 +733,7 @@ mod tests {
     fn test_compare_with_fhe_direct_conversion() {
         let moduli = [0xffffee001, 0xffffc4001, 0x1ffffe0001];
 
-        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 1, 100, 200)
+        let params = PvwParameters::new_with_u32_bounds(3, 64, 8, &moduli, 0.5, 100, 200)
             .expect("Failed to create parameters");
 
         // Test values that should work with both approaches

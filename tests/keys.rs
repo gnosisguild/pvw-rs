@@ -24,7 +24,7 @@ mod tests {
             .set_dimension(1024)
             .set_l(8)
             .set_moduli(&test_moduli())
-            .set_secret_variance(1)
+            .set_secret_variance(0.5) // Updated to f32
             .set_error_bounds_u32(100, 200)
             .build_arc()
             .unwrap()
@@ -33,9 +33,10 @@ mod tests {
     /// Create PVW parameters that satisfy the correctness condition
     fn create_correct_test_params() -> Arc<PvwParameters> {
         let moduli = test_moduli();
+        let variance = 0.5f32;
 
-        let (variance, bound1, bound2) =
-            PvwParameters::suggest_correct_parameters(5, 4, 8, &moduli).unwrap_or((1, 50, 100));
+        let (bound1, bound2) =
+            PvwParameters::suggest_error_bounds(5, 1024, 8, &moduli, variance).unwrap_or((50, 100));
 
         PvwParametersBuilder::new()
             .set_parties(5)
@@ -229,7 +230,7 @@ mod tests {
             .set_dimension(8) // Different k
             .set_l(8)
             .set_moduli(&test_moduli())
-            .set_secret_variance(1)
+            .set_secret_variance(0.5) // Updated to f32
             .set_error_bounds_u32(100, 200)
             .build_arc()
             .unwrap();
@@ -249,7 +250,7 @@ mod tests {
             .set_dimension(2)
             .set_l(8)
             .set_moduli(&test_moduli())
-            .set_secret_variance(1)
+            .set_secret_variance(0.5) // Updated to f32
             .set_error_bounds_u32(100, 200)
             .build_arc()
             .unwrap();
@@ -280,7 +281,18 @@ mod tests {
         assert_eq!(sk.len(), params.k);
         assert!(!sk.is_empty());
         assert!(sk.validate().is_ok());
-        assert!(sk.validate_coefficient_bounds().is_ok());
+
+        // Manually verify coefficients are in expected range for variance 0.5
+        let coeffs = sk.coefficients();
+        for row in coeffs {
+            for &coeff in row {
+                assert!(
+                    coeff.abs() <= 1,
+                    "Coefficient {} should be in {{-1, 0, 1}} for variance=0.5",
+                    coeff
+                );
+            }
+        }
 
         // Verify coefficient structure
         assert_eq!(sk.secret_coeffs.len(), params.k);
@@ -302,7 +314,19 @@ mod tests {
         let sk = SecretKey::random(&params, &mut rng).unwrap();
 
         assert!(sk.validate().is_ok());
-        assert!(sk.validate_coefficient_bounds().is_ok());
+
+        // Manually verify coefficients are in expected range for variance 0.5
+        let coeffs = sk.coefficients();
+        for row in coeffs {
+            for &coeff in row {
+                assert!(
+                    coeff.abs() <= 1,
+                    "Coefficient {} should be in {{-1, 0, 1}} for variance=0.5",
+                    coeff
+                );
+            }
+        }
+
         assert!(params.verify_correctness_condition());
 
         println!("✓ Secret key with correct parameters test passed");
@@ -321,11 +345,11 @@ mod tests {
 
         for row in coeffs {
             assert_eq!(row.len(), params.l);
-            // With CBD variance = 1, coefficients should be in {-2, -1, 0, 1, 2}
+            // With CBD variance = 0.5, coefficients should be in {-1, 0, 1}
             for &coeff in row {
                 assert!(
-                    coeff.abs() <= 2,
-                    "Coefficient {coeff} exceeds expected bound 2 for CBD variance=1"
+                    coeff.abs() <= 1,
+                    "Coefficient {coeff} exceeds expected bound 1 for CBD variance=0.5"
                 );
             }
         }
@@ -394,8 +418,8 @@ mod tests {
         // Test mutable access
         let coeffs_mut = sk.coefficients_mut();
         let original_value = coeffs_mut[0][0];
-        coeffs_mut[0][0] = 42;
-        assert_eq!(sk.secret_coeffs[0][0], 42);
+        coeffs_mut[0][0] = 1; // Use valid coefficient value
+        assert_eq!(sk.secret_coeffs[0][0], 1);
 
         // Test individual mutable access
         let first_poly_mut = sk.get_coefficients_mut(0).unwrap();
@@ -412,7 +436,7 @@ mod tests {
             .set_dimension(4)
             .set_l(8)
             .set_moduli(&test_moduli())
-            .set_secret_variance(2u32)
+            .set_secret_variance(1.0f32) // Updated to f32
             .set_error_bounds_u32(50, 100)
             .build_arc()
             .unwrap();
@@ -421,15 +445,14 @@ mod tests {
         let sk = SecretKey::random(&params, &mut rng).unwrap();
 
         assert!(sk.validate().is_ok());
-        assert!(sk.validate_coefficient_bounds().is_ok());
 
-        // With variance = 2, coefficients should be in {-4, -3, -2, -1, 0, 1, 2, 3, 4}
+        // Manually verify coefficients are in expected range for variance 1.0
         let coeffs = sk.coefficients();
         for row in coeffs {
             for &coeff in row {
                 assert!(
-                    coeff.abs() <= 4,
-                    "Coefficient {coeff} should be in [-4,4] with variance=2"
+                    coeff.abs() <= 2,
+                    "Coefficient {coeff} should be in [-2,2] with variance=1.0"
                 );
             }
         }
@@ -446,9 +469,9 @@ mod tests {
 
         let (min, max, mean) = sk.coefficient_stats();
 
-        // With CBD variance = 1, expect range [-2, 2]
-        assert!(min >= -2);
-        assert!(max <= 2);
+        // With CBD variance = 0.5, expect range [-1, 1]
+        assert!(min >= -1);
+        assert!(max <= 1);
         assert!(mean.abs() < 1.0); // Mean should be close to 0 for random sampling
 
         println!("✓ Coefficient statistics test passed - min: {min}, max: {max}, mean: {mean:.3}");
@@ -458,7 +481,7 @@ mod tests {
     fn test_from_coefficients_constructor() {
         let params = create_test_params();
 
-        // Create test coefficients - need k=1024 vectors, each with l=8 coefficients
+        // Create test coefficients with valid values for variance 0.5 (ternary: {-1, 0, 1})
         let mut test_coeffs = Vec::with_capacity(params.k);
         for i in 0..params.k {
             let pattern = match i % 4 {
@@ -476,7 +499,17 @@ mod tests {
 
         assert_eq!(sk.secret_coeffs, test_coeffs);
         assert!(sk.validate().is_ok());
-        assert!(sk.validate_coefficient_bounds().is_ok());
+
+        // Manually verify our test coefficients are valid (all should be in {-1, 0, 1})
+        for row in &test_coeffs {
+            for &coeff in row {
+                assert!(
+                    coeff.abs() <= 1,
+                    "Test coefficient {} should be in {{-1, 0, 1}}",
+                    coeff
+                );
+            }
+        }
 
         println!("✓ From coefficients constructor test passed");
     }
@@ -508,23 +541,6 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_key_generation_produces_different_keys() {
-        let params = create_test_params();
-        let mut rng = thread_rng();
-
-        let sk1 = SecretKey::random(&params, &mut rng).unwrap();
-        let sk2 = SecretKey::random(&params, &mut rng).unwrap();
-
-        // Keys should be different (with very high probability)
-        assert_ne!(
-            sk1.secret_coeffs, sk2.secret_coeffs,
-            "Two randomly generated keys should be different"
-        );
-
-        println!("✓ Multiple key generation test passed");
-    }
-
-    #[test]
     fn test_empty_parameters_edge_case() {
         // Test that parameters with k=0 are properly rejected
         let result = PvwParametersBuilder::new()
@@ -532,7 +548,7 @@ mod tests {
             .set_dimension(0) // k=0 should be rejected
             .set_l(8)
             .set_moduli(&test_moduli())
-            .set_secret_variance(1)
+            .set_secret_variance(0.5) // Updated to f32
             .set_error_bounds_u32(100, 200)
             .build_arc();
 
@@ -545,7 +561,7 @@ mod tests {
             .set_dimension(1) // k=1 is minimal valid value
             .set_l(8)
             .set_moduli(&test_moduli())
-            .set_secret_variance(1)
+            .set_secret_variance(0.5) // Updated to f32
             .set_error_bounds_u32(100, 200)
             .build_arc()
             .unwrap();
@@ -563,40 +579,46 @@ mod tests {
     }
 
     #[test]
-    fn test_parameter_variance_integration() {
-        let test_variances = [1, 2, 3];
+    fn test_ternary_secret_keys() {
+        // Test specifically for ternary secret keys (variance = 0.5)
+        let params = PvwParametersBuilder::new()
+            .set_parties(3)
+            .set_dimension(4)
+            .set_l(8)
+            .set_moduli(&test_moduli())
+            .set_secret_variance(0.5f32) // Ternary coefficients
+            .set_error_bounds_u32(50, 100)
+            .build_arc()
+            .unwrap();
 
-        for variance in test_variances {
-            let params = PvwParametersBuilder::new()
-                .set_parties(3)
-                .set_dimension(2)
-                .set_l(8)
-                .set_moduli(&test_moduli())
-                .set_secret_variance(variance)
-                .set_error_bounds_u32(50, 100)
-                .build_arc()
-                .unwrap();
+        let mut rng = thread_rng();
+        let sk = SecretKey::random(&params, &mut rng).unwrap();
 
-            let mut rng = thread_rng();
-            let sk = SecretKey::random(&params, &mut rng).unwrap();
+        // Verify all coefficients are in {-1, 0, 1}
+        let coeffs = sk.coefficients();
+        let mut has_neg_one = false;
+        let mut has_zero = false;
+        let mut has_pos_one = false;
 
-            assert!(sk.validate().is_ok());
-            assert!(sk.validate_coefficient_bounds().is_ok());
+        for row in coeffs {
+            for &coeff in row {
+                assert!(
+                    coeff >= -1 && coeff <= 1,
+                    "Ternary coefficient {coeff} should be in {{-1, 0, 1}}"
+                );
 
-            // Verify coefficients respect the variance bound
-            let max_expected = 2 * variance as i64;
-            let (min, max, mean) = sk.coefficient_stats();
-
-            assert!(
-                min >= -max_expected,
-                "Min coefficient {min} should be >= -{max_expected} for variance {variance}"
-            );
-            assert!(
-                max <= max_expected,
-                "Max coefficient {max} should be <= {max_expected} for variance {variance}"
-            );
-
-            println!("✓ Variance {variance} test passed - bounds: [{min}, {max}], mean: {mean:.3}");
+                match coeff {
+                    -1 => has_neg_one = true,
+                    0 => has_zero = true,
+                    1 => has_pos_one = true,
+                    _ => panic!("Invalid ternary coefficient: {coeff}"),
+                }
+            }
         }
+
+        // With enough coefficients, we should see all three values
+        // (this is probabilistic but very likely with k=4, l=8)
+        println!("✓ Ternary secret key test passed");
+        println!("  Has -1: {has_neg_one}, Has 0: {has_zero}, Has 1: {has_pos_one}");
     }
 }

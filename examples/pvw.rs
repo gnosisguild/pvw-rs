@@ -28,17 +28,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let num_parties = 7;
     let ring_degree = 8; // Must be a power of two
     let dimension = 32;
-
-    //let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
+    let secret_variance = 0.5; // Set your desired variance
     let moduli = vec![0xffffc4001u64, 0x1ffffe0001u64];
     //let moduli = vec![0x1ffffffe88001, 0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
+    //let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
 
     // Get parameters that satisfy correctness condition
-    let (suggested_variance, suggested_bound1, suggested_bound2) =
-        PvwParameters::suggest_correct_parameters(num_parties, dimension, ring_degree, &moduli)
-            .unwrap_or((1, 50, 100));
+    let (suggested_bound1, suggested_bound2) = PvwParameters::suggest_error_bounds(
+        num_parties,
+        dimension,
+        ring_degree,
+        &moduli,
+        secret_variance,
+    )
+    .unwrap_or((50, 100));
     println!(
-        "Suggested variance: {suggested_variance}, Suggested bound1: {suggested_bound1}, Suggested bound2: {suggested_bound2}"
+        "Suggested bound1: {suggested_bound1}, Suggested bound2: {suggested_bound2}, Secret variance: {secret_variance}"
     );
     // Build PVW parameters
     let params = PvwParametersBuilder::new()
@@ -46,7 +51,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .set_dimension(dimension)
         .set_l(ring_degree)
         .set_moduli(&moduli)
-        .set_secret_variance(suggested_variance)
+        .set_secret_variance(secret_variance)
         .set_error_bounds_u32(suggested_bound1, suggested_bound2)
         .build_arc()?;
 
@@ -62,9 +67,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         params.delta(),
         params.q_total().bits()
     );
-    println!(
-        "  • Error bounds: ({suggested_bound1}, {suggested_bound2}), Secret variance: {suggested_variance}"
-    );
+    println!("  • Error bounds: ({suggested_bound1}, {suggested_bound2})");
     println!(
         "  • Correctness condition: {}",
         if params.verify_correctness_condition() {
@@ -137,7 +140,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         .enumerate()
         .take(num_parties)
         .map(|(recipient_party_index, recipient_party)| {
-            // Use the new function to decrypt all shares intended for this party
             decrypt_party_shares(
                 &all_ciphertexts,
                 &recipient_party.secret_key,
