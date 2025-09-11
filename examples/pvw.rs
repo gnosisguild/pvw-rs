@@ -1,4 +1,4 @@
-//! Multi-Party Vector Encryption Example
+//! Multi-Party PVW Vector Encryption Example
 //!
 //! Demonstrates PVW encryption system where:
 //! 1. Multiple parties each encrypt their own vector of values
