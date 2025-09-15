@@ -1,6 +1,7 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use num_bigint::BigInt;
 use pvw::prelude::*;
+use pvw::sampling::uniform::sample_vec_cbd;
 use rand::thread_rng;
 use std::sync::Arc;
 
@@ -147,6 +148,14 @@ fn bench_sampling(c: &mut Criterion) {
 
     group.bench_function("sample_bigint_normal_vec", |b| {
         b.iter(|| sample_bigint_normal_vec(&variance, black_box(256)));
+    });
+
+    group.bench_function("sample_vec_cbd_0_5", |b| {
+        b.iter(|| sample_vec_cbd(10000, 0.5, &mut thread_rng()));
+    });
+
+    group.bench_function("sample_vec_cbd_1_0", |b| {
+        b.iter(|| sample_vec_cbd(10000, 1.0, &mut thread_rng()));
     });
 
     group.finish();

@@ -3,9 +3,9 @@ use num_traits::{Signed, ToPrimitive, Zero};
 use pvw::prelude::*;
 use pvw::sampling::normal::*;
 use pvw::sampling::uniform::sample_vec_cbd;
-use rand::{thread_rng, rngs::OsRng};
-use std::str::FromStr;
+use rand::{rngs::OsRng, thread_rng};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 #[cfg(test)]
 mod tests {
