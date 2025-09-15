@@ -288,8 +288,7 @@ mod tests {
             for &coeff in row {
                 assert!(
                     coeff.abs() <= 1,
-                    "Coefficient {} should be in {{-1, 0, 1}} for variance=0.5",
-                    coeff
+                    "Coefficient {coeff} should be in {{-1, 0, 1}} for variance=0.5"
                 );
             }
         }
@@ -321,8 +320,7 @@ mod tests {
             for &coeff in row {
                 assert!(
                     coeff.abs() <= 1,
-                    "Coefficient {} should be in {{-1, 0, 1}} for variance=0.5",
-                    coeff
+                    "Coefficient {coeff} should be in {{-1, 0, 1}} for variance=0.5"
                 );
             }
         }
@@ -505,8 +503,7 @@ mod tests {
             for &coeff in row {
                 assert!(
                     coeff.abs() <= 1,
-                    "Test coefficient {} should be in {{-1, 0, 1}}",
-                    coeff
+                    "Test coefficient {coeff} should be in {{-1, 0, 1}}"
                 );
             }
         }
@@ -603,7 +600,7 @@ mod tests {
         for row in coeffs {
             for &coeff in row {
                 assert!(
-                    coeff >= -1 && coeff <= 1,
+                    (-1..=1).contains(&coeff),
                     "Ternary coefficient {coeff} should be in {{-1, 0, 1}}"
                 );
 

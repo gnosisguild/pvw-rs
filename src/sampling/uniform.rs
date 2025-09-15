@@ -27,7 +27,7 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
     variance: f32,
     rng: &mut R,
 ) -> Result<Vec<i64>, &'static str> {
-    if variance < 0.5 || variance > 16.0 {
+    if !(0.5..=16.0).contains(&variance) {
         return Err("The variance should be between 0.5 and 16");
     }
 
@@ -96,18 +96,14 @@ mod tests {
         for &value in sorted_keys {
             let count = counts[&value];
             let percentage = (count as f64 / vector_size as f64) * 100.0;
-            println!(
-                "  Value {}: {} occurrences ({:.1}%)",
-                value, count, percentage
-            );
+            println!("  Value {value}: {count} occurrences ({percentage:.1}%)");
         }
 
         // Verify all values are in {-1, 0, 1}
         for &sample in &samples {
             assert!(
-                sample >= -1 && sample <= 1,
-                "Sample {} is outside range [-1, 1]",
-                sample
+                (-1..=1).contains(&sample),
+                "Sample {sample} is outside range [-1, 1]"
             );
         }
 
@@ -123,22 +119,20 @@ mod tests {
             / samples.len() as f64;
 
         println!("Empirical statistics:");
-        println!("  Mean: {:.6}", mean);
-        println!("  Variance: {:.6}", variance_empirical);
+        println!("  Mean: {mean:.6}");
+        println!("  Variance: {variance_empirical:.6}");
         println!("  Expected variance: 0.5");
 
         // Verify mean is close to 0 (centered distribution)
         assert!(
             mean.abs() < 0.1,
-            "Mean {} is not close to 0 for centered distribution",
-            mean
+            "Mean {mean} is not close to 0 for centered distribution"
         );
 
         // Verify variance is close to 0.5
         assert!(
             (variance_empirical - 0.5).abs() < 0.1,
-            "Empirical variance {} is not close to expected variance 0.5",
-            variance_empirical
+            "Empirical variance {variance_empirical} is not close to expected variance 0.5"
         );
 
         // Verify we only get values -1, 0, 1
@@ -149,8 +143,7 @@ mod tests {
         for value in &unique_values {
             assert!(
                 expected_values.contains(value),
-                "Unexpected value {} found",
-                value
+                "Unexpected value {value} found"
             );
         }
 
@@ -181,14 +174,11 @@ mod tests {
         for &value in sorted_keys {
             let count = counts[&value];
             let percentage = (count as f64 / vector_size as f64) * 100.0;
-            println!(
-                "  Value {}: {} occurrences ({:.1}%)",
-                value, count, percentage
-            );
+            println!("  Value {value}: {count} occurrences ({percentage:.1}%)");
         }
 
         // For variance 1.0, we expect a wider range including ±2
         let unique_values: std::collections::HashSet<_> = samples.into_iter().collect();
-        println!("Unique values with variance 1.0: {:?}", unique_values);
+        println!("Unique values with variance 1.0: {unique_values:?}");
     }
 }

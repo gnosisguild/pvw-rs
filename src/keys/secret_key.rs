@@ -50,7 +50,7 @@ impl SecretKey {
 
         for _ in 0..params.k {
             // Sample coefficients using CBD with configured variance
-            let coeffs = sample_vec_cbd(params.l, params.secret_variance as f32, rng)
+            let coeffs = sample_vec_cbd(params.l, params.secret_variance, rng)
                 .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {e}")))?;
 
             secret_coeffs.push(coeffs);

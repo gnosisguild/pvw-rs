@@ -136,7 +136,7 @@ pub fn encrypt(scalars: &[u64], global_pk: &GlobalPublicKey) -> Result<PvwCipher
         .into_par_iter()
         .map(|_| {
             let mut local_rng = rand::thread_rng();
-            sample_vec_cbd(params.l, params.secret_variance as f32, &mut local_rng)
+            sample_vec_cbd(params.l, params.secret_variance, &mut local_rng)
                 .map_err(|e| PvwError::SamplingError(format!("Failed to sample randomness: {e}")))
         })
         .collect();

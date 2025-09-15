@@ -13,7 +13,7 @@ mod tests {
             .set_dimension(2)
             .set_l(8)
             .set_moduli(&[0xffffee001u64, 0xffffc4001u64])
-            .set_secret_variance(1)
+            .set_secret_variance(1.0)
             .set_error_bounds_u32(50, 100)
             .build_arc()
             .expect("Failed to create test parameters")

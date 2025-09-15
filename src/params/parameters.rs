@@ -3,7 +3,7 @@
 //! This module manages the various parameters required for the PVW scheme
 //! and the Common Reference String used in cryptographic protocols.
 use crate::errors::{PvwError, PvwResult};
-use crate::sampling::uniform::{sample_uniform_coefficients, sample_vec_cbd};
+use crate::sampling::uniform::sample_uniform_coefficients;
 use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Context, Poly, Representation};
 use num_bigint::BigInt;
@@ -163,7 +163,7 @@ impl PvwParametersBuilder {
         };
 
         // Use provided parameters or defaults
-        let secret_variance = self.secret_variance.unwrap_or(0.5 as f32);
+        let secret_variance = self.secret_variance.unwrap_or(0.5);
         let error_bound_1 = self.error_bound_1.unwrap_or_else(|| BigInt::from(100u32));
         let error_bound_2 = self.error_bound_2.unwrap_or_else(|| BigInt::from(200u32));
         let t = (n - 1) / 2;
@@ -250,9 +250,8 @@ impl PvwParameters {
 
     /// Sample secret key polynomial with variance = secret_variance (CBD with coefficients)
     pub fn sample_secret_polynomial<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Result<Poly> {
-        let coeffs =
-            crate::sampling::uniform::sample_vec_cbd(self.l, self.secret_variance as f32, rng)
-                .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {e}")))?;
+        let coeffs = crate::sampling::uniform::sample_vec_cbd(self.l, self.secret_variance, rng)
+            .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {e}")))?;
 
         let mut poly = Poly::from_coefficients(&coeffs, &self.context)
             .map_err(|e| PvwError::SamplingError(format!("Failed to create polynomial: {e:?}")))?;
@@ -552,8 +551,6 @@ impl PvwParameters {
         delta_power_f64 > total_bound
     }
 
-    /// Get suggested parameters that satisfy the correctness condition
-
     /// Get suggested error bounds that satisfy the correctness condition for a given variance
     pub fn suggest_error_bounds(
         n: usize,
@@ -602,8 +599,7 @@ impl PvwParameters {
         }
 
         Err(PvwError::InvalidParameters(format!(
-            "Cannot find suitable error bounds for variance {} with the correctness condition",
-            variance
+            "Cannot find suitable error bounds for variance {variance} with the correctness condition"
         )))
     }
 }
