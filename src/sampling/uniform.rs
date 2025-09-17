@@ -3,8 +3,11 @@ use rand::thread_rng;
 use rand::{CryptoRng, RngCore};
 
 /// Sample uniform coefficients from [-bound, bound]
-pub fn sample_uniform_coefficients(bound: &BigInt, count: usize) -> Vec<BigInt> {
-    let mut rng = thread_rng();
+pub fn sample_uniform_coefficients<R: RngCore + CryptoRng>(
+    bound: &BigInt,
+    count: usize,
+    rng: &mut R, // Add RNG parameter
+) -> Vec<BigInt> {
     let mut samples = Vec::with_capacity(count);
 
     // Create range [-bound, bound + 1) since gen_bigint_range is exclusive of upper bound

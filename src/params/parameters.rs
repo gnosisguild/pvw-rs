@@ -260,9 +260,9 @@ impl PvwParameters {
         Ok(poly)
     }
 
-    /// Sample error polynomial (level 1) using discrete uniform sampling
-    pub fn sample_error_1<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Result<Poly> {
-        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_1, self.l);
+    /// Sample error 1 polynomial using discrete uniform sampling
+    pub fn sample_error_1<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Result<Poly> {
+        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_1, self.l, rng);
         let mut poly = self.bigints_to_poly(&coeffs_bigint)?;
 
         if self.l >= 8 {
@@ -271,10 +271,9 @@ impl PvwParameters {
 
         Ok(poly)
     }
-
-    /// Sample error polynomial (level 2) using discrete uniform sampling
-    pub fn sample_error_2<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Result<Poly> {
-        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_2, self.l);
+    /// Sample error 2 polynomial using discrete uniform sampling
+    pub fn sample_error_2<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Result<Poly> {
+        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_2, self.l, rng);
         let mut poly = self.bigints_to_poly(&coeffs_bigint)?;
 
         if self.l >= 8 {

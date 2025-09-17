@@ -28,33 +28,38 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
 
     // Configuration
-    let num_parties = 7;
-    let threshold = 5; // Minimum number of valid ciphertexts needed (from threshold BFV)
-    let ring_degree = 8; // Must be a power of two
-    let dimension = 32;
-    let secret_variance = 0.5; // Set your desired variance
-    let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
+    // let num_parties = 7;
+    // let threshold = 5; // Minimum number of valid ciphertexts needed (from threshold BFV)
+    // let ring_degree = 8; // Must be a power of two
+    // let dimension = 32;
+    // let secret_variance = 0.5; // Set your desired variance
+    // let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
 
     //for 128-bit security, try these suggested parameters from https://github.com/gnosisguild/enclave-research/tree/FHE_Parameters/Parameters:
     //In this case don't use suggested_error_bounds, just use these directly
-    //let moduli = vec![0x800000022a0001, 0x800000021a0001, 0x80000002120001, 0x80000001f60001];
-    //let num_parties = 1000;
-    //let threshold = 400;
-    //let ring_degree = 8;
-    //let dimension = 1024;
-    //let secret_variance = 0.5;
-    //let suggested_bound1 = 1;
-    //let suggested_bound2 = 1172385;
+    let moduli = vec![
+        0x800000022a0001,
+        0x800000021a0001,
+        0x80000002120001,
+        0x80000001f60001,
+    ];
+    let num_parties = 5;
+    let threshold = 2;
+    let ring_degree = 8;
+    let dimension = 1024;
+    let secret_variance = 0.5;
+    let suggested_bound1 = 1;
+    let suggested_bound2 = 1172385;
 
     // Get error bounds that satisfy correctness condition
-    let (suggested_bound1, suggested_bound2) = PvwParameters::suggest_error_bounds(
-        num_parties,
-        dimension,
-        ring_degree,
-        &moduli,
-        secret_variance,
-    )
-    .unwrap_or((50, 100));
+    // let (suggested_bound1, suggested_bound2) = PvwParameters::suggest_error_bounds(
+    //     num_parties,
+    //     dimension,
+    //     ring_degree,
+    //     &moduli,
+    //     secret_variance,
+    // )
+    // .unwrap_or((50, 100));
 
     // Build PVW parameters
     let params = PvwParametersBuilder::new()
