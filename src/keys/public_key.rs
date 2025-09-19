@@ -49,6 +49,8 @@ pub struct GlobalPublicKey {
     pub num_keys: usize,
     /// Parameters used for this global key
     pub params: Arc<PvwParameters>,
+    /// Error polynomials used in key generation: [party_index][k_dimension]
+    pub error_polynomials: Vec<Vec<Poly>>,
 }
 
 impl Party {
@@ -85,7 +87,8 @@ impl Party {
         crs: &PvwCrs,
         rng: &mut R,
     ) -> Result<PublicKey> {
-        PublicKey::generate(&self.secret_key, crs, rng)
+        let (public_key, _errors) = PublicKey::generate(&self.secret_key, crs, rng)?;
+        Ok(public_key)
     }
 
     /// Get this party's index
@@ -109,7 +112,7 @@ impl PublicKey {
         secret_key: &SecretKey,
         crs: &PvwCrs,
         rng: &mut R,
-    ) -> Result<Self> {
+    ) -> Result<(Self, Vec<Poly>)> {
         // Validate dimensions
         if secret_key.params.k != crs.params.k {
             return Err(PvwError::DimensionMismatch {
@@ -130,15 +133,17 @@ impl PublicKey {
 
         // Compute b_i = s_i * A + e_i
         let mut key_polynomials = Vec::with_capacity(secret_key.params.k);
-        for (sk_a_poly, error_poly) in sk_a_result.into_iter().zip(error_polys.into_iter()) {
+        for (sk_a_poly, error_poly) in sk_a_result.into_iter().zip(error_polys.iter()) {
             let result = &sk_a_poly + &error_poly;
             key_polynomials.push(result);
         }
 
-        Ok(Self {
+        let public_key = Self {
             key_polynomials,
             params: secret_key.params.clone(),
-        })
+        };
+
+        Ok((public_key, error_polys))
     }
 
     /// Get the dimension of the public key (should equal k)
@@ -198,6 +203,7 @@ impl GlobalPublicKey {
             params: crs.params.clone(),
             crs,
             num_keys: 0,
+            error_polynomials: Vec::new(), // Initialize empty
         }
     }
 
@@ -266,7 +272,7 @@ impl GlobalPublicKey {
         secret_key: &SecretKey,
         rng: &mut R,
     ) -> Result<()> {
-        let public_key = PublicKey::generate(secret_key, &self.crs, rng)?;
+        let (public_key, _errors) = PublicKey::generate(secret_key, &self.crs, rng)?;
         self.add_public_key(index, public_key)
     }
 
@@ -292,6 +298,33 @@ impl GlobalPublicKey {
             key_polynomials,
             params: self.params.clone(),
         })
+    }
+
+    /// Generate and add public key while capturing error polynomials
+    pub fn generate_and_add_with_errors<R: RngCore + CryptoRng>(
+        &mut self,
+        index: usize,
+        secret_key: &SecretKey,
+        rng: &mut R,
+    ) -> Result<()> {
+        let (public_key, error_polys) = PublicKey::generate(secret_key, &self.crs, rng)?;
+        self.add_public_key(index, public_key)?;
+
+        // Store the errors
+        if self.error_polynomials.len() <= index {
+            self.error_polynomials.resize(index + 1, Vec::new());
+        }
+        self.error_polynomials[index] = error_polys;
+
+        Ok(())
+    }
+    /// Generate and add a public key for the given party while capturing errors
+    pub fn generate_and_add_party_with_errors<R: RngCore + CryptoRng>(
+        &mut self,
+        party: &Party,
+        rng: &mut R,
+    ) -> Result<()> {
+        self.generate_and_add_with_errors(party.index, &party.secret_key, rng)
     }
 
     /// Get a reference to the polynomial at position (i, j) in the global matrix
@@ -386,7 +419,8 @@ impl GlobalPublicKey {
             .enumerate()
             .map(|(index, secret_key)| {
                 let mut local_rng = rand::thread_rng();
-                let public_key = PublicKey::generate(secret_key, &self.crs, &mut local_rng)?;
+                let (public_key, _errors) =
+                    PublicKey::generate(secret_key, &self.crs, &mut local_rng)?;
                 Ok((index, public_key))
             })
             .collect();
@@ -422,6 +456,15 @@ impl GlobalPublicKey {
         }
 
         Ok(polys)
+    }
+    /// Get error polynomials for a specific party
+    pub fn get_party_errors(&self, party_index: usize) -> Option<&Vec<Poly>> {
+        self.error_polynomials.get(party_index)
+    }
+
+    /// Get all error polynomials
+    pub fn get_all_errors(&self) -> &Vec<Vec<Poly>> {
+        &self.error_polynomials
     }
 }
 
