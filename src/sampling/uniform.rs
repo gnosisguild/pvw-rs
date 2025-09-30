@@ -1,5 +1,4 @@
 use num_bigint::{BigInt, RandBigInt};
-use rand::thread_rng;
 use rand::{CryptoRng, RngCore};
 
 /// Sample uniform coefficients from [-bound, bound]

@@ -13,7 +13,7 @@ use pvw::{
     crypto::PvwCiphertext,
     crypto::{decrypt_party_shares, decrypt_party_value, encrypt_all_party_shares},
     keys::{GlobalPublicKey, Party},
-    params::{PvwCrs, PvwParameters, PvwParametersBuilder},
+    params::{PvwCrs, PvwParametersBuilder},
 };
 use rand::{RngCore, rngs::OsRng, seq::SliceRandom};
 use std::error::Error;

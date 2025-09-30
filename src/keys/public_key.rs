@@ -134,7 +134,7 @@ impl PublicKey {
         // Compute b_i = s_i * A + e_i
         let mut key_polynomials = Vec::with_capacity(secret_key.params.k);
         for (sk_a_poly, error_poly) in sk_a_result.into_iter().zip(error_polys.iter()) {
-            let result = &sk_a_poly + &error_poly;
+            let result = &sk_a_poly + error_poly;
             key_polynomials.push(result);
         }
 
@@ -534,11 +534,19 @@ impl serde::Serialize for GlobalPublicKey {
             .map(|row| row.iter().map(|p| p.to_bytes()).collect())
             .collect();
 
-        let mut state = serializer.serialize_struct("GlobalPublicKey", 4)?;
+        // Convert error polynomials to bytes for serialization
+        let error_bytes: Vec<Vec<Vec<u8>>> = self
+            .error_polynomials
+            .iter()
+            .map(|party_errors| party_errors.iter().map(|p| p.to_bytes()).collect())
+            .collect();
+
+        let mut state = serializer.serialize_struct("GlobalPublicKey", 5)?;
         state.serialize_field("matrix", &matrix_bytes)?;
         state.serialize_field("crs", &self.crs)?;
         state.serialize_field("num_keys", &self.num_keys)?;
         state.serialize_field("params", &*self.params)?;
+        state.serialize_field("error_polynomials", &error_bytes)?;
         state.end()
     }
 }
@@ -550,18 +558,33 @@ impl<'de> serde::Deserialize<'de> for GlobalPublicKey {
         D: serde::Deserializer<'de>,
     {
         use fhe_traits::DeserializeWithContext;
-
+        
         #[derive(serde::Deserialize)]
         struct DeserializedGlobalPublicKey {
             matrix: Vec<Vec<Vec<u8>>>,
             crs: PvwCrs,
             num_keys: usize,
             params: PvwParameters,
+            error_polynomials: Vec<Vec<Vec<u8>>>,
         }
 
         let data = DeserializedGlobalPublicKey::deserialize(deserializer)?;
         let params = Arc::new(data.params);
         let crs = data.crs;
+
+        // Deserialize error polynomials
+        let error_polynomials: std::result::Result<Vec<Vec<Poly>>, _> = data
+            .error_polynomials
+            .into_iter()
+            .map(|party_errors| {
+                party_errors
+                    .into_iter()
+                    .map(|bytes| Poly::from_bytes(&bytes, &params.context))
+                    .collect()
+            })
+            .collect();
+
+        let error_polynomials = error_polynomials.map_err(serde::de::Error::custom)?;
 
         // Deserialize matrix
         let matrix_polys: std::result::Result<Vec<Vec<Poly>>, _> = data
@@ -593,6 +616,7 @@ impl<'de> serde::Deserialize<'de> for GlobalPublicKey {
             crs,
             num_keys: data.num_keys,
             params,
+            error_polynomials,
         })
     }
 }

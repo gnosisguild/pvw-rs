@@ -176,7 +176,7 @@ fn bench_validation(c: &mut Criterion) {
 
     let crs = PvwCrs::new(&Arc::new(params.clone()), &mut thread_rng()).unwrap();
     let secret_key = SecretKey::random(&Arc::new(params.clone()), &mut thread_rng()).unwrap();
-    let public_key = PublicKey::generate(&secret_key, &crs, &mut thread_rng()).unwrap();
+    let (public_key, _errors) = PublicKey::generate(&secret_key, &crs, &mut thread_rng()).unwrap();
 
     group.bench_function("validate_crs", |b| {
         b.iter(|| crs.validate().unwrap());

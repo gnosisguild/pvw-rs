@@ -85,7 +85,7 @@ mod tests {
         // Create CRS and public key
         let crs = PvwCrs::new(&params, &mut rng).expect("Failed to create CRS");
         let secret_key = SecretKey::random(&params, &mut rng).expect("Failed to create secret key");
-        let public_key =
+        let (public_key, _errors) =
             PublicKey::generate(&secret_key, &crs, &mut rng).expect("Failed to create public key");
 
         // Test binary serialization with bincode
