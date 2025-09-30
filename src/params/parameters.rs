@@ -6,7 +6,6 @@ use crate::errors::{PvwError, PvwResult};
 use crate::sampling::uniform::sample_uniform_coefficients;
 use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Context, Poly, Representation};
-use fhe_util::sample_vec_cbd;
 use num_bigint::BigInt;
 use num_bigint::BigUint;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -27,7 +26,7 @@ pub struct PvwParameters {
     /// Redundancy parameter ℓ (number of coefficients)
     pub l: usize,
     /// Secret key variance
-    pub secret_variance: u32,
+    pub secret_variance: f32,
     /// First error bound
     pub error_bound_1: BigInt,
     /// Second error bound (for encryption)
@@ -47,7 +46,7 @@ pub struct PvwParametersBuilder {
     k: Option<usize>,
     l: Option<usize>,
     moduli: Option<Vec<u64>>,
-    secret_variance: Option<u32>,
+    secret_variance: Option<f32>,
     error_bound_1: Option<BigInt>,
     error_bound_2: Option<BigInt>,
 }
@@ -83,7 +82,7 @@ impl PvwParametersBuilder {
     }
 
     /// Set the secret key variance
-    pub fn set_secret_variance(mut self, variance: u32) -> Self {
+    pub fn set_secret_variance(mut self, variance: f32) -> Self {
         self.secret_variance = Some(variance);
         self
     }
@@ -164,7 +163,7 @@ impl PvwParametersBuilder {
         };
 
         // Use provided parameters or defaults
-        let secret_variance = self.secret_variance.unwrap_or(1u32);
+        let secret_variance = self.secret_variance.unwrap_or(0.5);
         let error_bound_1 = self.error_bound_1.unwrap_or_else(|| BigInt::from(100u32));
         let error_bound_2 = self.error_bound_2.unwrap_or_else(|| BigInt::from(200u32));
         let t = (n - 1) / 2;
@@ -213,7 +212,7 @@ impl PvwParameters {
         k: usize,
         l: usize,
         moduli: &[u64],
-        secret_variance: u32,
+        secret_variance: f32,
         error_bound_1: BigInt,
         error_bound_2: BigInt,
     ) -> Result<Self> {
@@ -234,7 +233,7 @@ impl PvwParameters {
         k: usize,
         l: usize,
         moduli: &[u64],
-        secret_variance: u32,
+        secret_variance: f32,
         error_bound_1: u32,
         error_bound_2: u32,
     ) -> Result<Self> {
@@ -251,7 +250,7 @@ impl PvwParameters {
 
     /// Sample secret key polynomial with variance = secret_variance (CBD with coefficients)
     pub fn sample_secret_polynomial<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Result<Poly> {
-        let coeffs = sample_vec_cbd(self.l, self.secret_variance as usize, rng)
+        let coeffs = crate::sampling::uniform::sample_vec_cbd(self.l, self.secret_variance, rng)
             .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {e}")))?;
 
         let mut poly = Poly::from_coefficients(&coeffs, &self.context)
@@ -261,9 +260,9 @@ impl PvwParameters {
         Ok(poly)
     }
 
-    /// Sample error polynomial (level 1) using discrete uniform sampling
-    pub fn sample_error_1<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Result<Poly> {
-        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_1, self.l);
+    /// Sample error 1 polynomial using discrete uniform sampling
+    pub fn sample_error_1<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Result<Poly> {
+        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_1, self.l, rng);
         let mut poly = self.bigints_to_poly(&coeffs_bigint)?;
 
         if self.l >= 8 {
@@ -272,10 +271,9 @@ impl PvwParameters {
 
         Ok(poly)
     }
-
-    /// Sample error polynomial (level 2) using discrete uniform sampling
-    pub fn sample_error_2<R: RngCore + CryptoRng>(&self, _rng: &mut R) -> Result<Poly> {
-        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_2, self.l);
+    /// Sample error 2 polynomial using discrete uniform sampling
+    pub fn sample_error_2<R: RngCore + CryptoRng>(&self, rng: &mut R) -> Result<Poly> {
+        let coeffs_bigint = sample_uniform_coefficients(&self.error_bound_2, self.l, rng);
         let mut poly = self.bigints_to_poly(&coeffs_bigint)?;
 
         if self.l >= 8 {
@@ -508,10 +506,7 @@ impl PvwParameters {
     }
 
     /// Verify the PVW correctness condition:
-    /// delta_power_l_minus_1 > error_bound_1 * (24 * sqrt(l^2*k*n) + 31.8*k*l) + error_bound_2 * (2.37 * sqrt(n*l) + 1.7*n)
-    ///
-    /// Note we are using this temporarily. For our case, we will have different conditions as we
-    /// are not using the same protocol for the zk proofs.
+    /// Δ^(ℓ-1) > error_bound_2 * sqrt(n*ℓ) * (1 + sqrt(n)) + 2*error_bound_1*k*ℓ + 14*error_bound_1*sqrt(n*k*ℓ)
     pub fn verify_correctness_condition(&self) -> bool {
         use std::f64;
 
@@ -523,74 +518,88 @@ impl PvwParameters {
         let error_bound_1_f64 = self.error_bound_1.to_f64().unwrap_or(f64::INFINITY);
         let error_bound_2_f64 = self.error_bound_2.to_f64().unwrap_or(f64::INFINITY);
 
-        // Calculate the first sqrt term: sqrt(l^2*k*n)
-        let first_sqrt_term = if l * l * k * n > 0.0 {
-            (l * l * k * n).sqrt()
-        } else {
-            f64::INFINITY
-        };
+        // Calculate each term of the new condition:
 
-        let first_term = error_bound_1_f64 * (24.0 * first_sqrt_term + 31.8 * k * l);
-
-        // Calculate the second term: error_bound_2 * (2.37/sqrt(n*l) + 1.7*n)
-
-        let second_sqrt_term = if n * l > 0.0 {
+        // First term: error_bound_2 * sqrt(n*ℓ) * (1 + sqrt(n))
+        let sqrt_nl = if n * l > 0.0 {
             (n * l).sqrt()
         } else {
             f64::INFINITY
         };
-        let second_term = error_bound_2_f64 * (2.37 * second_sqrt_term + 1.7 * n);
+        let sqrt_n = if n > 0.0 { n.sqrt() } else { f64::INFINITY };
+        let first_term = error_bound_2_f64 * sqrt_nl * (1.0 + sqrt_n);
 
-        // Total bound
-        let total_bound = first_term + second_term;
+        // Second term: 2 * error_bound_1 * k * ℓ
+        let second_term = 2.0 * error_bound_1_f64 * k * l;
 
-        // Convert delta_power_l_minus_1 to f64 for comparison
+        // Third term: 14 * error_bound_1 * sqrt(n * k * ℓ)
+        let sqrt_nkl = if n * k * l > 0.0 {
+            (n * k * l).sqrt()
+        } else {
+            f64::INFINITY
+        };
+        let third_term = 14.0 * error_bound_1_f64 * sqrt_nkl;
+
+        // Total bound: sum of all three terms
+        let total_bound = first_term + second_term + third_term;
+
+        // Convert Δ^(ℓ-1) to f64 for comparison
         let delta_power_f64 = self.delta_power_l_minus_1.to_f64().unwrap_or(0.0);
 
+        // Check the condition: Δ^(ℓ-1) > total_bound
         delta_power_f64 > total_bound
     }
 
-    /// Get suggested parameters that satisfy the correctness condition
-    pub fn suggest_correct_parameters(
+    /// Get suggested error bounds that satisfy the correctness condition for a given variance
+    pub fn suggest_error_bounds(
         n: usize,
         k: usize,
         l: usize,
         moduli: &[u64],
-    ) -> Result<(u32, u32, u32)> {
+        variance: f32,
+    ) -> Result<(u32, u32)> {
         // Create a temporary parameter set to compute delta
         let temp_params = Self::builder()
             .set_parties(n)
             .set_dimension(k)
             .set_l(l)
             .set_moduli(moduli)
-            .set_secret_variance(1)
+            .set_secret_variance(variance)
             .set_error_bounds_u32(1, 1) // Minimal bounds for computation
             .build()?;
 
         let delta_power_f64 = temp_params.delta_power_l_minus_1.to_f64().unwrap_or(0.0);
 
-        // Calculate the coefficients
+        // Calculate the coefficients for the correctness condition
         let n_f64 = n as f64;
         let k_f64 = k as f64;
         let l_f64 = l as f64;
 
-        let coeff1 = 24.0 * (l_f64 * l_f64 * k_f64 * n_f64).sqrt() + 31.8 * k_f64 * l_f64;
-        let coeff2 = 2.37 * (n_f64 * l_f64).sqrt() + 1.7 * n_f64 * l_f64;
+        // Coefficients for error_bound_1: 2*k*ℓ + 14*sqrt(n*k*ℓ)
+        let sqrt_nkl = (n_f64 * k_f64 * l_f64).sqrt();
+        let coeff_error_bound_1 = 2.0 * k_f64 * l_f64 + 14.0 * sqrt_nkl;
 
-        // Start with small bounds and check if they work
-        for error_bound_1 in [100, 200, 500, 1000, 2000, 5000].into_iter().rev() {
-            for error_bound_2 in [100, 200, 500, 1000, 2000, 5000].into_iter().rev() {
-                let total_bound = error_bound_1 as f64 * coeff1 + error_bound_2 as f64 * coeff2;
+        // Coefficients for error_bound_2: sqrt(n*ℓ) * (1 + sqrt(n))
+        let sqrt_nl = (n_f64 * l_f64).sqrt();
+        let sqrt_n = n_f64.sqrt();
+        let coeff_error_bound_2 = sqrt_nl * (1.0 + sqrt_n);
+
+        // Try different combinations of error bounds
+        for error_bound_1 in [50, 100, 200, 500, 1000, 2000].into_iter() {
+            for error_bound_2 in [50, 100, 200, 500, 1000, 2000].into_iter() {
+                let total_bound = error_bound_1 as f64 * coeff_error_bound_1
+                    + error_bound_2 as f64 * coeff_error_bound_2;
+
                 if delta_power_f64 > total_bound {
-                    // Add safety margin
-                    return Ok((1, error_bound_1, error_bound_2));
+                    // Found suitable bounds
+                    return Ok((error_bound_1, error_bound_2));
                 }
             }
         }
 
-        Err(PvwError::InvalidParameters(
-            "Cannot find suitable error bounds for given parameters".to_string(),
-        ))
+        Err(PvwError::InvalidParameters(format!(
+            "Cannot find suitable error bounds for variance {variance} with the correctness condition"
+        )))
     }
 }
 
@@ -625,7 +634,7 @@ impl<'de> serde::Deserialize<'de> for PvwParameters {
             k: usize,
             l: usize,
             moduli: Vec<u64>,
-            secret_variance: u32,
+            secret_variance: f32,
             error_bound_1: String,
             error_bound_2: String,
         }

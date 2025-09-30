@@ -1,6 +1,7 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use num_bigint::BigInt;
 use pvw::prelude::*;
+use pvw::sampling::uniform::sample_vec_cbd;
 use rand::thread_rng;
 use std::sync::Arc;
 
@@ -14,7 +15,7 @@ fn bench_parameter_generation(c: &mut Criterion) {
                 .set_dimension(256)
                 .set_l(8)
                 .set_moduli(&[0xffffee001u64, 0xffffc4001u64])
-                .set_secret_variance(1)
+                .set_secret_variance(1.0)
                 .set_error_bounds_u32(100, 200)
                 .build()
                 .unwrap()
@@ -28,7 +29,7 @@ fn bench_parameter_generation(c: &mut Criterion) {
                 .set_dimension(512)
                 .set_l(16)
                 .set_moduli(&[0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64])
-                .set_secret_variance(1)
+                .set_secret_variance(1.0)
                 .set_error_bounds_u32(100, 200)
                 .build()
                 .unwrap()
@@ -42,7 +43,7 @@ fn bench_parameter_generation(c: &mut Criterion) {
                 .set_dimension(1024)
                 .set_l(32)
                 .set_moduli(&[0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64])
-                .set_secret_variance(1)
+                .set_secret_variance(1.0)
                 .set_error_bounds_u32(100, 200)
                 .build()
                 .unwrap()
@@ -60,7 +61,7 @@ fn bench_crs_generation(c: &mut Criterion) {
         .set_dimension(256)
         .set_l(8)
         .set_moduli(&[0xffffee001u64, 0xffffc4001u64])
-        .set_secret_variance(1)
+        .set_secret_variance(1.0)
         .set_error_bounds_u32(100, 200)
         .build()
         .unwrap();
@@ -70,7 +71,7 @@ fn bench_crs_generation(c: &mut Criterion) {
         .set_dimension(512)
         .set_l(16)
         .set_moduli(&[0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64])
-        .set_secret_variance(1)
+        .set_secret_variance(1.0)
         .set_error_bounds_u32(100, 200)
         .build()
         .unwrap();
@@ -94,7 +95,7 @@ fn bench_key_generation(c: &mut Criterion) {
         .set_dimension(256)
         .set_l(8)
         .set_moduli(&[0xffffee001u64, 0xffffc4001u64])
-        .set_secret_variance(1)
+        .set_secret_variance(1.0)
         .set_error_bounds_u32(100, 200)
         .build()
         .unwrap();
@@ -104,7 +105,7 @@ fn bench_key_generation(c: &mut Criterion) {
         .set_dimension(512)
         .set_l(16)
         .set_moduli(&[0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64])
-        .set_secret_variance(1)
+        .set_secret_variance(1.0)
         .set_error_bounds_u32(100, 200)
         .build()
         .unwrap();
@@ -149,6 +150,14 @@ fn bench_sampling(c: &mut Criterion) {
         b.iter(|| sample_bigint_normal_vec(&variance, black_box(256)));
     });
 
+    group.bench_function("sample_vec_cbd_0_5", |b| {
+        b.iter(|| sample_vec_cbd(10000, 0.5, &mut thread_rng()));
+    });
+
+    group.bench_function("sample_vec_cbd_1_0", |b| {
+        b.iter(|| sample_vec_cbd(10000, 1.0, &mut thread_rng()));
+    });
+
     group.finish();
 }
 
@@ -160,14 +169,14 @@ fn bench_validation(c: &mut Criterion) {
         .set_dimension(256)
         .set_l(8)
         .set_moduli(&[0xffffee001u64, 0xffffc4001u64])
-        .set_secret_variance(1)
+        .set_secret_variance(1.0)
         .set_error_bounds_u32(100, 200)
         .build()
         .unwrap();
 
     let crs = PvwCrs::new(&Arc::new(params.clone()), &mut thread_rng()).unwrap();
     let secret_key = SecretKey::random(&Arc::new(params.clone()), &mut thread_rng()).unwrap();
-    let public_key = PublicKey::generate(&secret_key, &crs, &mut thread_rng()).unwrap();
+    let (public_key, _errors) = PublicKey::generate(&secret_key, &crs, &mut thread_rng()).unwrap();
 
     group.bench_function("validate_crs", |b| {
         b.iter(|| crs.validate().unwrap());

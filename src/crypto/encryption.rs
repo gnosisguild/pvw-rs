@@ -1,8 +1,8 @@
 use crate::errors::PvwError;
 use crate::keys::public_key::GlobalPublicKey;
 use crate::params::parameters::{PvwParameters, Result};
+use crate::sampling::uniform::sample_vec_cbd;
 use fhe_math::rq::{Poly, Representation};
-use fhe_util::sample_vec_cbd;
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -136,7 +136,7 @@ pub fn encrypt(scalars: &[u64], global_pk: &GlobalPublicKey) -> Result<PvwCipher
         .into_par_iter()
         .map(|_| {
             let mut local_rng = rand::thread_rng();
-            sample_vec_cbd(params.l, params.secret_variance as usize, &mut local_rng)
+            sample_vec_cbd(params.l, params.secret_variance, &mut local_rng)
                 .map_err(|e| PvwError::SamplingError(format!("Failed to sample randomness: {e}")))
         })
         .collect();

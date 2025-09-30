@@ -39,10 +39,7 @@ pub mod prelude {
     pub use crate::errors::{PvwError, PvwResult};
 
     // Re-export crypto types
-    pub use crate::crypto::{
-        PvwCiphertext, decrypt_party_shares, decrypt_party_value, decrypt_threshold_party_shares,
-        encrypt,
-    };
+    pub use crate::crypto::{PvwCiphertext, decrypt_party_shares, decrypt_party_value, encrypt};
 
     // Re-export sampling functions
     pub use crate::sampling::normal::{sample_bigint_normal_vec, sample_discrete_gaussian_vec};

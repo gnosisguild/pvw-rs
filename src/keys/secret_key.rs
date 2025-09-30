@@ -1,7 +1,7 @@
 use crate::errors::PvwError;
 use crate::params::parameters::{PvwParameters, Result};
+use crate::sampling::uniform::sample_vec_cbd;
 use fhe_math::rq::{Poly, Representation};
-use fhe_util::sample_vec_cbd;
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -50,7 +50,7 @@ impl SecretKey {
 
         for _ in 0..params.k {
             // Sample coefficients using CBD with configured variance
-            let coeffs = sample_vec_cbd(params.l, params.secret_variance as usize, rng)
+            let coeffs = sample_vec_cbd(params.l, params.secret_variance, rng)
                 .map_err(|e| PvwError::SamplingError(format!("CBD sampling failed: {e}")))?;
 
             secret_coeffs.push(coeffs);

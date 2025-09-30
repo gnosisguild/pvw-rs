@@ -55,15 +55,15 @@ mod tests {
     /// Create PVW parameters for testing with moderate security settings
     fn create_test_params() -> Arc<PvwParameters> {
         let moduli = test_moduli();
-        let (variance, bound1, bound2) =
-            PvwParameters::suggest_correct_parameters(3, 4, 8, &moduli).unwrap_or((1, 50, 100));
+        let (bound1, bound2) =
+            PvwParameters::suggest_error_bounds(3, 4, 8, &moduli, 0.5).unwrap_or((50, 100));
 
         PvwParametersBuilder::new()
             .set_parties(3)
             .set_dimension(4)
             .set_l(8)
             .set_moduli(&moduli)
-            .set_secret_variance(variance)
+            .set_secret_variance(0.5)
             .set_error_bounds_u32(bound1, bound2)
             .build_arc()
             .unwrap()
@@ -214,7 +214,7 @@ mod tests {
             .set_dimension(4)
             .set_l(8)
             .set_moduli(&test_moduli())
-            .set_secret_variance(3) // Large variance
+            .set_secret_variance(3.0) // Large variance
             .set_error_bounds_u32(1000, 2000) // Large error bounds
             .build_arc()
             .unwrap();
@@ -239,8 +239,8 @@ mod tests {
         let moduli = vec![0xffffee001u64, 0xffffc4001u64, 0x1ffffe0001u64];
         let num_parties = 10;
 
-        let (variance, bound1, bound2) =
-            PvwParameters::suggest_correct_parameters(num_parties, 4, 16, &moduli)
+        let (bound1, bound2) =
+            PvwParameters::suggest_error_bounds(num_parties, 4, 16, &moduli, 0.5)
                 .expect("Should find parameters for l=16");
 
         let params = PvwParametersBuilder::new()
@@ -248,7 +248,7 @@ mod tests {
             .set_dimension(4)
             .set_l(16)
             .set_moduli(&moduli)
-            .set_secret_variance(variance)
+            .set_secret_variance(0.5)
             .set_error_bounds_u32(bound1, bound2)
             .build_arc()
             .expect("Should create parameters");
