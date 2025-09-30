@@ -558,7 +558,7 @@ impl<'de> serde::Deserialize<'de> for GlobalPublicKey {
         D: serde::Deserializer<'de>,
     {
         use fhe_traits::DeserializeWithContext;
-        
+
         #[derive(serde::Deserialize)]
         struct DeserializedGlobalPublicKey {
             matrix: Vec<Vec<Vec<u8>>>,
