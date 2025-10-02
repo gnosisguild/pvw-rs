@@ -41,3 +41,7 @@ serde = ["dep:serde", "dep:bincode"]
 [[bench]]
 name = "pvw"
 harness = false
+
+[[bench]]
+name = "data_sizes"
+harness = false
