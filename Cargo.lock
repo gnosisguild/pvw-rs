@@ -251,6 +251,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "doc-comment"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -291,9 +297,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
+name = "fhe"
+version = "0.1.0-beta.7"
+source = "git+https://github.com/gnosisguild/fhe.rs?branch=refactor%2Fpvw-compat#549969e8103a89fb8caad81e08339b59c1b32b66"
+dependencies = [
+ "doc-comment",
+ "fhe-math",
+ "fhe-traits",
+ "fhe-util",
+ "itertools 0.12.1",
+ "ndarray",
+ "num-bigint",
+ "num-traits",
+ "prost",
+ "prost-build",
+ "rand",
+ "rand_chacha",
+ "rand_distr",
+ "rayon",
+ "serde",
+ "thiserror",
+ "zeroize",
+ "zeroize_derive",
+]
+
+[[package]]
 name = "fhe-math"
 version = "0.1.0-beta.7"
-source = "git+https://github.com/gnosisguild/fhe.rs?branch=refactor%2Fpvw-compat#364335035e3a801573539274b2d3052d5b69098a"
+source = "git+https://github.com/gnosisguild/fhe.rs?branch=refactor%2Fpvw-compat#549969e8103a89fb8caad81e08339b59c1b32b66"
 dependencies = [
  "ethnum",
  "fhe-traits",
@@ -316,7 +347,7 @@ dependencies = [
 [[package]]
 name = "fhe-traits"
 version = "0.1.0-beta.7"
-source = "git+https://github.com/gnosisguild/fhe.rs?branch=refactor%2Fpvw-compat#364335035e3a801573539274b2d3052d5b69098a"
+source = "git+https://github.com/gnosisguild/fhe.rs?branch=refactor%2Fpvw-compat#549969e8103a89fb8caad81e08339b59c1b32b66"
 dependencies = [
  "rand",
 ]
@@ -324,7 +355,7 @@ dependencies = [
 [[package]]
 name = "fhe-util"
 version = "0.1.0-beta.7"
-source = "git+https://github.com/gnosisguild/fhe.rs?branch=refactor%2Fpvw-compat#364335035e3a801573539274b2d3052d5b69098a"
+source = "git+https://github.com/gnosisguild/fhe.rs?branch=refactor%2Fpvw-compat#549969e8103a89fb8caad81e08339b59c1b32b66"
 dependencies = [
  "itertools 0.12.1",
  "num-bigint-dig",
@@ -766,6 +797,7 @@ dependencies = [
  "bincode",
  "console",
  "criterion",
+ "fhe",
  "fhe-math",
  "fhe-traits",
  "fhe-util",
