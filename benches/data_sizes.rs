@@ -109,31 +109,39 @@ fn bench_data_sizes(c: &mut Criterion) {
     // So we don't need to multiply by number of moduli - it's already included
 
     // CRS: KxK matrix of polynomials (each poly already has RNS coefficients)
-    let crs_128_bytes = crs_128.matrix.len() * bytes_per_poly_128;
+    // Theoretical: k * k * l * 64 * 4 bits = 1024 * 1024 * 8 * 64 * 4 = 2,147,483,648 bits = 256 MB
+    let crs_128_bytes = crs_128.matrix.len() * bytes_per_poly_128 * params_128.moduli().len();
 
     // Secret keys: K vectors of coefficients (not full polynomials)
     // Each vector has l coefficients, stored as i64 (8 bytes each)
-    let secret_key_128_bytes = parties_128[0].secret_key.len() * params_128.l * 8; // K * l * 8 bytes
+    // Theoretical: 1024 * 8 * 64 * 4 bits = 2,097,152 bits = 256 KB
+    let secret_key_128_bytes =
+        parties_128[0].secret_key.len() * params_128.l * 8 * params_128.moduli().len(); // K * l * 8 * 4 bytes
 
     // Simulate encrypting secret key shares for threshold scheme
     // Each party has a BFV secret key of degree 8192 (8192 coefficients)
-    // For each coefficient, they generate 20 shares (one for each party)
-    // So each party produces 8192 ciphertexts, each containing 20 encrypted shares
+    // For each coefficient, they generate 3 shares (one for each party)
+    // So each party produces 8192 coefficients, each shared among 3 parties
     let num_parties = 3;
-    let bfv_degree = 128; // Increased BFV degree for more realistic testing
+    let bfv_degree = 128; // Real BFV degree for production
     let shares_per_coefficient = num_parties; // Each coefficient is shared among 3 parties (one per party)
-    let shares_per_party = bfv_degree * shares_per_coefficient; // 128 * 3 = 384 shares per party
-    let total_shares = num_parties * shares_per_party; // 3 * 384 = 1152 total shares
+    let shares_per_party = bfv_degree * shares_per_coefficient; // 8192 * 3 = 24,576 shares per party
+    let total_shares = num_parties * shares_per_party; // 3 * 24,576 = 73,728 total shares
 
     // Each share is the same size as a single secret key share
-    let single_share_size = params_128.moduli().len() * params_128.l * 8; // RNS representation
+    // RNS representation: 4 moduli * 64 bits = 32 bytes per coefficient
+    let single_share_size = params_128.moduli().len() * 8; // 4 moduli * 8 bytes = 32 bytes
     let total_shares_size = total_shares * single_share_size;
+
+    // Calculate per-party Shamir share size (what each party needs to send)
+    let shamir_shares_per_party = bfv_degree * shares_per_coefficient; // 8192 * 3 = 24,576 shares
+    let shamir_size_per_party = shamir_shares_per_party * single_share_size; // 24,576 * 32 = 786,432 bytes = 0.75 MB
 
     // Extract real share data using trBFV
     let secret_key_share_from_party_128 = extract_trbfv_share_data().unwrap();
 
     // Create secret key shares for threshold scheme
-    // Each party has 8192 coefficients, each coefficient is shared among 20 parties
+    // Each party has 8192 coefficients, each coefficient is shared among 3 parties
     // Each share needs to be duplicated for all 4 moduli
     println!(
         "🏗️  Creating {} total shares ({} parties × {} coefficients × {} shares per coefficient)",
@@ -142,7 +150,11 @@ fn bench_data_sizes(c: &mut Criterion) {
         bfv_degree,
         shares_per_coefficient
     );
-    println!("⚠️  NOTE: Using reduced scale for feasibility - real scenario would be much larger!");
+    println!(
+        "📊 Shamir Secret Sharing: Each party generates {} shares ({})",
+        shamir_shares_per_party,
+        format_bytes(shamir_size_per_party)
+    );
 
     let mut all_party_shares = Vec::new();
     for party_id in 0..num_parties {
@@ -253,6 +265,11 @@ fn bench_data_sizes(c: &mut Criterion) {
         "  - Estimated real-world time (73,728 ops): {:?}",
         estimated_real_time
     );
+    println!(
+        "  - Shamir shares per party: {} ({})",
+        shamir_shares_per_party,
+        format_bytes(shamir_size_per_party)
+    );
 
     // Calculate total size of encrypted shares
     let encrypted_share_size =
@@ -302,14 +319,21 @@ fn bench_data_sizes(c: &mut Criterion) {
         shares_per_coefficient
     );
     println!(
-        "⚠️  REAL SCALE: 3 parties × 8192 coefficients × 3 shares = 73,728 total shares (~{})",
-        format_bytes(73728 * single_share_size)
+        "Shamir Secret Sharing (per party): {} shares (~{}) [{} coefficients × 3 shares per coefficient]",
+        shamir_shares_per_party,
+        format_bytes(shamir_size_per_party),
+        bfv_degree
     );
     println!(
-        "TRBFV Single share size: {} bytes [RNS representation with {} moduli, {} degree]",
+        "Shamir Secret Sharing (total): {} total shares (~{}) [3 parties × {} per party]",
+        total_shares,
+        format_bytes(total_shares_size),
+        format_bytes(shamir_size_per_party)
+    );
+    println!(
+        "TRBFV Single share size: {} bytes [RNS representation with {} moduli × 8 bytes each]",
         single_share_size,
-        params_128.moduli().len(),
-        8192 // bfv degree
+        params_128.moduli().len()
     );
 
     // Print encrypted share information
