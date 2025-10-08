@@ -121,7 +121,7 @@ impl PublicKey {
             });
         }
 
-        // Compute A * secret_key using CRS matrix multiplication
+        // Compute secret_key * A   using CRS matrix multiplication
         let sk_a_result = crs.multiply_by_secret_key(secret_key)?;
 
         // Generate error polynomials using the configured error bound

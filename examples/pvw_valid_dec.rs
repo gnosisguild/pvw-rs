@@ -13,7 +13,7 @@ use pvw::{
     crypto::PvwCiphertext,
     crypto::{decrypt_party_shares, decrypt_party_value, encrypt_all_party_shares},
     keys::{GlobalPublicKey, Party},
-    params::{PvwCrs, PvwParametersBuilder},
+    params::{PvwCrs, PvwParameters, PvwParametersBuilder},
 };
 use rand::{RngCore, rngs::OsRng, seq::SliceRandom};
 use std::error::Error;
@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let threshold = 2;
     let ring_degree = 8;
     let dimension = 1024;
-    let secret_variance = 0.5;
+    let secret_variance = 10.0;
     let suggested_bound1 = 1;
     let suggested_bound2 = 1172385;
 
